@@ -1,0 +1,10 @@
+/* Tailwind is wired in here once the frontend toolchain is installed. */
+
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+}

@@ -1,16 +1,18 @@
 # AGENT.md
 
-# Project: DevFlow (Working Name)
+# Project: Switchyard
 
 > An AI-powered workflow automation platform built for software teams.
+>
+> _AI drafts the route. You throw the switches._
 
 ---
 
 # Vision
 
-DevFlow is a workflow automation platform that combines the speed of AI with the reliability of visual workflows.
+Switchyard is a workflow automation platform that combines the speed of AI with the reliability of visual workflows.
 
-Instead of forcing users to manually create automation pipelines or blindly trusting AI-generated actions, DevFlow lets users describe a workflow in natural language, generates an editable workflow graph, and gives them complete control before execution.
+Instead of forcing users to manually create automation pipelines or blindly trusting AI-generated actions, Switchyard lets users describe a workflow in natural language, generates an editable workflow graph, and gives them complete control before execution.
 
 The platform is built specifically for developers, engineering teams, DevOps engineers, and technical startups—not as a general-purpose automation platform like Zapier.
 
@@ -62,7 +64,7 @@ Cons
 
 ---
 
-DevFlow combines both approaches.
+Switchyard combines both approaches.
 
 The workflow always becomes a visual graph that the user can inspect, modify, and execute.
 
@@ -408,30 +410,64 @@ Separate business logic from transport layers.
 
 Avoid placing logic inside HTTP handlers.
 
-Recommended packages
-
-cmd/
-internal/
-
-    auth/
-
-    workflow/
-
-    execution/
-
-    ai/
-
-    github/
-
-    slack/
-
-    websocket/
-
-    database/
-
-pkg/
-
 Business logic belongs inside internal packages.
+
+## Repository Layout
+
+Two top-level directories, one per toolchain. No monorepo tooling — there is
+exactly one frontend app, so a workspace would be ceremony without payoff.
+
+    switchyard/
+      AGENT.md
+      backend/            Go module: github.com/R7rainz/switchyard/backend
+      frontend/           Next.js app
+
+## Backend
+
+    backend/
+      go.mod
+      cmd/
+        switchyard/       main package; wiring and startup only
+      internal/
+        config/           environment loading; the only reader of env vars
+        api/              HTTP transport: routing, decode, encode, middleware
+        auth/             signup, login, sessions, password hashing
+        workflow/         graph model, validation, persistence
+        execution/        the engine: runs nodes, tracks state, records logs
+        ai/               provider abstraction; generation and AI nodes
+        github/           pull requests, issues, comments, webhooks
+        slack/            outbound messages
+        websocket/        live execution log streaming
+        database/         PostgreSQL connection and queries
+      migrations/         SQL schema migrations
+      pkg/                reusable code with no Switchyard-specific meaning
+
+Every package carries a `doc.go` stating its responsibility. If a package's
+purpose cannot be written in two sentences, it is doing too much.
+
+`pkg/` is currently empty and stays that way until something genuinely
+general-purpose earns a place in it. An empty `pkg/` is not a goal.
+
+The transport package is named `api`, not `http`, so it never shadows the
+standard library's `net/http` at a call site.
+
+## Frontend
+
+    frontend/
+      src/
+        app/              Next.js App Router: routes, layouts
+        components/       React components
+        lib/              client helpers, API bindings
+      public/             static assets
+
+## Dependency Direction
+
+    api  ->  auth, workflow, execution
+    execution  ->  ai, github, slack, database, websocket
+    everything  ->  database, config
+
+Domain packages never import `api`. The engine never imports HTTP. Arrows
+point one way only; a cycle means a boundary was drawn wrong.
 
 ---
 
@@ -472,7 +508,7 @@ Build only what is necessary.
 
 # Long Term Vision
 
-DevFlow should become an automation platform where developers can automate engineering workflows using AI without sacrificing transparency or control.
+Switchyard should become an automation platform where developers can automate engineering workflows using AI without sacrificing transparency or control.
 
 The platform should eventually support
 
