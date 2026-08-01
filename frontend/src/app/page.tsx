@@ -1,3 +1,7 @@
 export default function Home() {
-  return <main>Switchyard</main>;
+  return (
+    <main>
+      <div>Hello world!</div>
+    </main>
+  );
 }

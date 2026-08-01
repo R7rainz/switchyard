@@ -1,0 +1,6 @@
+# pnpm blocks dependency build scripts unless explicitly allowed here.
+#   sharp         - image optimization used by next/image
+#   unrs-resolver - module resolution backing eslint-config-next
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
