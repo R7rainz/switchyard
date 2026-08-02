@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	alice    = "user-alice"
-	bob      = "user-bob"
+	alpha    = "ws-alpha"
+	beta     = "ws-beta"
 	provider = "github"
 	name     = "default"
 )
@@ -42,11 +42,11 @@ func TestPutGetRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	secret := Secret("ghp_averyrealtoken")
 
-	if err := service.Put(ctx, alice, provider, name, secret); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, secret); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
-	got, err := service.Get(ctx, alice, provider, name)
+	got, err := service.Get(ctx, alpha, provider, name)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -61,10 +61,10 @@ func TestPutGetOAuthTokenDocument(t *testing.T) {
 	ctx := context.Background()
 	token := `{"access_token":"at-1","refresh_token":"rt-1","expires_at":"2026-01-01T00:00:00Z"}`
 
-	if err := service.Put(ctx, alice, "slack", "workspace", Secret(token)); err != nil {
+	if err := service.Put(ctx, alpha, "slack", "workspace", Secret(token)); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	got, err := service.Get(ctx, alice, "slack", "workspace")
+	got, err := service.Get(ctx, alpha, "slack", "workspace")
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -78,11 +78,11 @@ func TestStoredRecordHoldsNoPlaintext(t *testing.T) {
 	ctx := context.Background()
 	secret := Secret("ghp_averyrealtoken")
 
-	if err := service.Put(ctx, alice, provider, name, secret); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, secret); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
-	record, err := store.Get(ctx, alice, provider, name)
+	record, err := store.Get(ctx, alpha, provider, name)
 	if err != nil {
 		t.Fatalf("store.Get: %v", err)
 	}
@@ -106,20 +106,20 @@ func TestPutReplacesInPlace(t *testing.T) {
 	service, store, _ := newService(t)
 	ctx := context.Background()
 
-	if err := service.Put(ctx, alice, provider, name, Secret("first")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("first")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	first, _ := store.Get(ctx, alice, provider, name)
+	first, _ := store.Get(ctx, alpha, provider, name)
 
-	if err := service.Put(ctx, alice, provider, name, Secret("second")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("second")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	second, _ := store.Get(ctx, alice, provider, name)
+	second, _ := store.Get(ctx, alpha, provider, name)
 
 	if second.ID != first.ID {
 		t.Errorf("replacing the secret changed the row id: %q -> %q", first.ID, second.ID)
 	}
-	got, err := service.Get(ctx, alice, provider, name)
+	got, err := service.Get(ctx, alpha, provider, name)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestPutReplacesInPlace(t *testing.T) {
 		t.Errorf("Get returned the stale secret")
 	}
 
-	records, err := service.List(ctx, alice)
+	records, err := service.List(ctx, alpha)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
@@ -141,74 +141,75 @@ func TestPutRejectsIncompleteInput(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		name                     string
-		owner, provider, credent string
-		secret                   Secret
+		name                         string
+		workspace, provider, credent string
+		secret                       Secret
 	}{
-		{"no owner", "", provider, name, Secret("s")},
-		{"no provider", alice, "", name, Secret("s")},
-		{"no name", alice, provider, "", Secret("s")},
-		{"empty secret", alice, provider, name, Secret("")},
+		{"no workspace", "", provider, name, Secret("s")},
+		{"no provider", alpha, "", name, Secret("s")},
+		{"no name", alpha, provider, "", Secret("s")},
+		{"empty secret", alpha, provider, name, Secret("")},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := service.Put(ctx, tc.owner, tc.provider, tc.credent, tc.secret); err == nil {
+			if err := service.Put(ctx, tc.workspace, tc.provider, tc.credent, tc.secret); err == nil {
 				t.Error("Put accepted it")
 			}
 		})
 	}
 }
 
-// Ownership is the whole permission model, so this is the test that matters:
+// Scoping is what keeps workspaces apart, so this is the test that matters:
 // Bob asking for Alice's credential gets nothing, not hers.
-func TestOneOwnerCannotReadAnother(t *testing.T) {
+func TestOneWorkspaceCannotReadAnother(t *testing.T) {
 	service, _, _ := newService(t)
 	ctx := context.Background()
 
-	if err := service.Put(ctx, alice, provider, name, Secret("alice-token")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("alpha-token")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
-	if _, err := service.Get(ctx, bob, provider, name); !errors.Is(err, ErrNotFound) {
-		t.Errorf("Get for the wrong owner returned %v, want ErrNotFound", err)
+	if _, err := service.Get(ctx, beta, provider, name); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Get for the wrong workspace returned %v, want ErrNotFound", err)
 	}
-	if err := service.Delete(ctx, bob, provider, name); !errors.Is(err, ErrNotFound) {
-		t.Errorf("Delete for the wrong owner returned %v, want ErrNotFound", err)
+	if err := service.Delete(ctx, beta, provider, name); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Delete for the wrong workspace returned %v, want ErrNotFound", err)
 	}
 
-	records, err := service.List(ctx, bob)
+	records, err := service.List(ctx, beta)
 	if err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if len(records) != 0 {
-		t.Errorf("List returned %d of another owner's records", len(records))
+		t.Errorf("List returned %d of another workspace's records", len(records))
 	}
 
 	// Alice's credential is untouched by any of that.
-	if _, err := service.Get(ctx, alice, provider, name); err != nil {
-		t.Errorf("Get for the owner: %v", err)
+	if _, err := service.Get(ctx, alpha, provider, name); err != nil {
+		t.Errorf("Get for the workspace: %v", err)
 	}
 }
 
-// A store that ignores its owner predicate must not turn into a leak: the owner
+// A store that ignores its workspace predicate must not turn into a leak: the
+// workspace
 // authenticates the ciphertext, so the wrong one cannot open it.
-func TestOwnerBindsTheCiphertext(t *testing.T) {
+func TestWorkspaceBindsTheCiphertext(t *testing.T) {
 	service, store, _ := newService(t)
 	ctx := context.Background()
 
-	if err := service.Put(ctx, alice, provider, name, Secret("alice-token")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("alpha-token")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
 	// Bob copies Alice's row onto his own, which is what a compromised or
 	// simply buggy store amounts to.
-	stolen, _ := store.Get(ctx, alice, provider, name)
-	stolen.OwnerID = bob
+	stolen, _ := store.Get(ctx, alpha, provider, name)
+	stolen.WorkspaceID = beta
 	if err := store.Save(ctx, stolen); err != nil {
 		t.Fatalf("store.Save: %v", err)
 	}
 
-	if _, err := service.Get(ctx, bob, provider, name); !errors.Is(err, ErrDecrypt) {
+	if _, err := service.Get(ctx, beta, provider, name); !errors.Is(err, ErrDecrypt) {
 		t.Errorf("Get on a stolen row returned %v, want ErrDecrypt", err)
 	}
 }
@@ -217,20 +218,20 @@ func TestDelete(t *testing.T) {
 	service, _, _ := newService(t)
 	ctx := context.Background()
 
-	if err := service.Put(ctx, alice, provider, name, Secret("token")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("token")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := service.Delete(ctx, alice, provider, name); err != nil {
+	if err := service.Delete(ctx, alpha, provider, name); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if _, err := service.Get(ctx, alice, provider, name); !errors.Is(err, ErrNotFound) {
+	if _, err := service.Get(ctx, alpha, provider, name); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get after Delete returned %v, want ErrNotFound", err)
 	}
 }
 
 func TestGetMissingIsNotFound(t *testing.T) {
 	service, _, _ := newService(t)
-	if _, err := service.Get(context.Background(), alice, provider, "nothing-here"); !errors.Is(err, ErrNotFound) {
+	if _, err := service.Get(context.Background(), alpha, provider, "nothing-here"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Get returned %v, want ErrNotFound", err)
 	}
 }
@@ -239,7 +240,7 @@ func TestDecryptFailsWithTheWrongKey(t *testing.T) {
 	service, store, _ := newService(t)
 	ctx := context.Background()
 
-	if err := service.Put(ctx, alice, provider, name, Secret("token")); err != nil {
+	if err := service.Put(ctx, alpha, provider, name, Secret("token")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
@@ -251,7 +252,7 @@ func TestDecryptFailsWithTheWrongKey(t *testing.T) {
 	}
 	impostor := NewService(store, other)
 
-	if _, err := impostor.Get(ctx, alice, provider, name); !errors.Is(err, ErrDecrypt) {
+	if _, err := impostor.Get(ctx, alpha, provider, name); !errors.Is(err, ErrDecrypt) {
 		t.Errorf("Get with the wrong key returned %v, want ErrDecrypt", err)
 	}
 }
@@ -273,11 +274,11 @@ func TestTamperedCiphertextIsRejected(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			service, store, _ := newService(t)
-			if err := service.Put(ctx, alice, provider, name, Secret("token")); err != nil {
+			if err := service.Put(ctx, alpha, provider, name, Secret("token")); err != nil {
 				t.Fatalf("Put: %v", err)
 			}
 
-			record, _ := store.Get(ctx, alice, provider, name)
+			record, _ := store.Get(ctx, alpha, provider, name)
 			// Only the ciphertext and nonce are damaged, so the row keeps its
 			// identity and the service asks for exactly this one back.
 			tc.damage(&record)
@@ -285,7 +286,7 @@ func TestTamperedCiphertextIsRejected(t *testing.T) {
 				t.Fatalf("store.Save: %v", err)
 			}
 
-			if _, err := service.Get(ctx, alice, provider, name); !errors.Is(err, ErrDecrypt) {
+			if _, err := service.Get(ctx, alpha, provider, name); !errors.Is(err, ErrDecrypt) {
 				t.Errorf("Get returned %v, want ErrDecrypt", err)
 			}
 		})
@@ -302,10 +303,10 @@ func TestNoncesDifferAcrossEncryptions(t *testing.T) {
 	seen := make(map[string]bool)
 	for i := range 100 {
 		credentialName := fmt.Sprintf("key-%d", i)
-		if err := service.Put(ctx, alice, provider, credentialName, secret); err != nil {
+		if err := service.Put(ctx, alpha, provider, credentialName, secret); err != nil {
 			t.Fatalf("Put: %v", err)
 		}
-		record, _ := store.Get(ctx, alice, provider, credentialName)
+		record, _ := store.Get(ctx, alpha, provider, credentialName)
 
 		if seen[string(record.Nonce)] {
 			t.Fatalf("nonce repeated after %d encryptions", i+1)
@@ -333,7 +334,7 @@ func TestRotateReEncryptsUnderTheNewKey(t *testing.T) {
 
 	secrets := map[string]string{"a": "secret-a", "b": "secret-b", "c": "secret-c"}
 	for credentialName, secret := range secrets {
-		if err := before.Put(ctx, alice, provider, credentialName, Secret(secret)); err != nil {
+		if err := before.Put(ctx, alpha, provider, credentialName, Secret(secret)); err != nil {
 			t.Fatalf("Put: %v", err)
 		}
 	}
@@ -358,14 +359,14 @@ func TestRotateReEncryptsUnderTheNewKey(t *testing.T) {
 	// Mid-rotation: every credential still reads, whichever key holds it.
 	versions := map[int]int{}
 	for credentialName, want := range secrets {
-		got, err := after.Get(ctx, alice, provider, credentialName)
+		got, err := after.Get(ctx, alpha, provider, credentialName)
 		if err != nil {
 			t.Fatalf("Get(%s) mid-rotation: %v", credentialName, err)
 		}
 		if string(got) != want {
 			t.Errorf("Get(%s) = %q, want %q", credentialName, got, want)
 		}
-		record, _ := store.Get(ctx, alice, provider, credentialName)
+		record, _ := store.Get(ctx, alpha, provider, credentialName)
 		versions[record.KeyVersion]++
 	}
 	if versions[1] != 1 || versions[2] != 2 {
@@ -396,7 +397,7 @@ func TestRotateReEncryptsUnderTheNewKey(t *testing.T) {
 	}
 	retired := NewService(store, newOnly)
 	for credentialName, want := range secrets {
-		got, err := retired.Get(ctx, alice, provider, credentialName)
+		got, err := retired.Get(ctx, alpha, provider, credentialName)
 		if err != nil {
 			t.Fatalf("Get(%s) after rotation: %v", credentialName, err)
 		}
@@ -414,12 +415,12 @@ func TestGetWithARetiredKeyVersion(t *testing.T) {
 
 	oldRing, _ := NewKeyring(1, map[int][]byte{1: oldKey})
 	store := NewMemoryStore()
-	if err := NewService(store, oldRing).Put(ctx, alice, provider, name, Secret("token")); err != nil {
+	if err := NewService(store, oldRing).Put(ctx, alpha, provider, name, Secret("token")); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
 
 	newOnly, _ := NewKeyring(2, map[int][]byte{2: testKey(t)})
-	_, err := NewService(store, newOnly).Get(ctx, alice, provider, name)
+	_, err := NewService(store, newOnly).Get(ctx, alpha, provider, name)
 	if err == nil || !strings.Contains(err.Error(), "no key for version 1") {
 		t.Errorf("Get = %v, want it to name the missing key version", err)
 	}
@@ -497,5 +498,28 @@ func TestSecretRedactsItself(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "ghp_") {
 		t.Errorf("JSON leaked the plaintext: %s", encoded)
+	}
+}
+
+func TestCredentialsAreSharedWithinAWorkspace(t *testing.T) {
+	// The point of the move off per-user ownership: a key saved by one member
+	// is the workspace's key, so a workflow another member runs finds it.
+	// Under the old model this lookup returned nothing.
+	service, _, _ := newService(t)
+	ctx := context.Background()
+
+	const workspaceID = "ws-1"
+	if err := service.Put(ctx, workspaceID, "github", "ci", Secret("ghp_shared")); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// A different member of the same workspace reads by workspace, not by who
+	// saved it — there is no longer a caller identity in this call at all.
+	got, err := service.Get(ctx, workspaceID, "github", "ci")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(got) != "ghp_shared" {
+		t.Errorf("Get = %q, want the shared secret", got)
 	}
 }
