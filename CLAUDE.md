@@ -262,6 +262,17 @@ the `public` schema, so never point it at anything you care about:
     SWITCHYARD_TEST_DATABASE_URL=postgres://postgres:t@localhost:55433/switchyard \
       go test ./internal/database/
 
+### CORS
+
+`CORS(appURL)` allows exactly one origin — the frontend's URL, which is already
+the JWT issuer, so there is no second value to keep in step. Not `*`: that
+would let any page on the internet drive this API with a token it obtained.
+
+It is mounted **before `RequireAuth`**, because a preflight carries no
+`Authorization` header. Behind auth it would get a 401, and the browser would
+never send the real request — a failure that looks like broken CORS but is
+actually middleware ordering.
+
 ### Logging
 
 **zerolog**, built in `main.go` and passed explicitly into `api.NewRouter`.
@@ -286,6 +297,12 @@ table.** Changing the secret without clearing that table makes every token mint
 fail with `Failed to decrypt private key` — while `/api/auth/jwks` keeps
 serving the stale public key, so the symptom is a 500 on `/token`, not on the
 key set. Fix: `truncate jwks`, or put the old secret back.
+
+**Ports on this machine are all taken by other projects.** Postgres is 5434
+because 5432 and 5433 belong to pulseops and auramail; the API is **8090**
+because auramail's backend container holds 8080; the frontend is 3007 because
+3000 and 3001 are in use. All three are defaults in code, not just docs, so a
+bare `go run` and `pnpm dev` land somewhere free.
 
 **The frontend is pinned to port 3007** via `--port` in `package.json`, because
 3000 and 3001 belong to other projects on this machine and Next silently drifts
@@ -391,7 +408,7 @@ the variables to put in one:
     SWITCHYARD_CREDENTIAL_KEY   # 1:$(openssl rand -base64 32), newest first
     SWITCHYARD_AUTH_ISSUER      # must equal the frontend's BETTER_AUTH_URL
     SWITCHYARD_AUTH_AUDIENCE    # switchyard-backend
-    SWITCHYARD_ADDR             # :8080
+    SWITCHYARD_ADDR             # :8090
     SWITCHYARD_ENV              # development | production
     SWITCHYARD_LOG_LEVEL        # trace|debug|info|warn|error|fatal|panic
 
@@ -399,7 +416,7 @@ the variables to put in one:
 to start without them.
 
 
-    go run ./cmd/switchyard     # :8080, override with SWITCHYARD_ADDR
+    go run ./cmd/switchyard     # :8090, override with SWITCHYARD_ADDR
     go build ./...
     go test ./...
     go vet ./...
