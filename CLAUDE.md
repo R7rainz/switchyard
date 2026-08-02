@@ -164,30 +164,63 @@ process.
 
 ### Permissions
 
-**Ownership is the whole model.** A workflow, execution, or credential belongs
-to exactly one user, and that user is the only one who may touch it. No roles,
-no teams, no sharing — so there is nothing to grant beyond "is this yours".
+**Everything belongs to a workspace, not a user.** Workflows, executions, and
+credentials are workspace-owned, so access is a membership question. Modelled
+on pulseops, which solved the same problem.
 
-`auth.UserID(ctx)` returns the caller's id, and it is the value **every
-owner-scoped query must filter by**. Ownership belongs in the `WHERE` clause,
-not in a check after loading: a forgotten predicate returns someone else's row,
-a forgotten check is merely a missing guard on a row you should not have read.
-`auth.RequireOwner(ctx, ownerID)` is the backstop for paths where the resource
-is already in hand, not the primary defence.
+`internal/auth` holds the role model — four strictly ordered roles and one
+permission table in `role.go`. `internal/workspace` holds membership,
+invitations, and the rules about who may change whom.
 
-Handlers return domain errors and call `writeError`, which owns the mapping:
+    VIEWER  workflow:read, execution:read, member:read
+    MEMBER  + workflow:write/delete, execution:run
+    ADMIN   + credential:manage, member:manage, workspace:update
+    OWNER   + workspace:delete
 
-    auth.ErrNoIdentity  -> 401
-    auth.ErrNotOwner    -> 404      (not 403)
-    anything else       -> 500, cause logged, generic body
+**`minimumRole` in `role.go` is the whole authorization table.** Add a
+permission there or it is denied to everyone — an unknown permission returns
+false rather than falling through to the zero role, so a typo at a call site
+closes a door instead of opening one. An unrecognised *role* ranks below
+VIEWER for the same reason.
 
-**404 for another user's resource is deliberate.** A 403 confirms the resource
-exists, which lets any account probe for other users' ids. Someone else's
-resource and a resource that never existed must be indistinguishable. There is
-a test asserting the two responses match.
+Three rules in `workspace` exist to stop privilege escalation, each with a
+test:
 
-An empty `ownerID` never matches a caller — a row with no owner is a bug
-somewhere else, and treating it as public would turn that bug into a leak.
+- a member may not grant a role above their own (an admin cannot mint an owner)
+- a member may not act on a peer (two admins cannot demote each other)
+- the last owner may not be demoted or removed
+
+`api.RequirePermission(svc, perm)` gates a route on the `{workspaceID}` URL
+parameter. **It checks per request, not off the token**, so a demotion applies
+immediately rather than when the 15-minute JWT expires. Mounted on a route with
+no `{workspaceID}`, it fails closed.
+
+`writeError` owns the status mapping:
+
+    auth.ErrNoIdentity        -> 401
+    workspace.ErrNotMember    -> 404   (not 403)
+    workspace.ErrNotFound     -> 404
+    workspace.ErrForbidden    -> 403
+    ErrInviteExpired/Exhausted-> 410
+    workspace.ErrLastOwner    -> 409
+    anything else             -> 500, cause logged, generic body
+
+**Non-membership answers 404 while an insufficient role answers 403**, and the
+split is deliberate. A stranger must not learn a workspace id is real, so their
+answer is identical to one for a workspace that never existed — there is a test
+comparing the two bodies. A member already knows it exists, so 403 tells them
+nothing they could not see anyway.
+
+**Only the SHA-256 of an invite token is stored.** The token is a bearer
+credential; storing it would let anyone reading the database join every
+workspace with an invite outstanding. It is returned exactly once, at creation
+— to re-share a link you revoke and re-issue. Accepting an invite twice is not
+an error, and an existing member keeps the role they have, so a viewer link
+cannot be used to demote an admin.
+
+`auth.UserID(ctx)` is still the caller's id and still the value owner-scoped
+queries filter by. `auth.RequireOwner` remains for rows owned by a user
+directly rather than a workspace.
 
 ### Logging
 

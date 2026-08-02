@@ -336,15 +336,28 @@ Better Auth owns the credential flow in the Next.js app.
 The Go backend does not hash passwords. It verifies the JWT, builds the user
 context, and answers session and permission questions.
 
-Permissions are in v1. A workflow, execution, and credential belongs to a
-user, and the backend enforces that — a caller may only read, change, run, or
-delete what is theirs. That enforcement lives with the queries it guards, so
-ownership is a predicate on every lookup rather than a check someone can
-forget to call.
+RBAC is in v1, scoped to a workspace.
 
-This is per-user ownership, not a role system. Teams, shared workspaces, and
-role hierarchies remain out of v1, so nothing yet grants one user access to
-another's resources.
+A **workspace** is what everything belongs to: workflows, executions, and
+credentials are owned by a workspace, not by a user directly, so access is a
+membership question. Each member holds one of four roles, strictly ordered:
+
+    VIEWER  read workflows and executions
+    MEMBER  + create, edit, delete, and run them
+    ADMIN   + manage credentials, members, and invitations
+    OWNER   + delete the workspace
+
+A workspace always keeps at least one owner, nobody may grant a role above
+their own, and nobody may act on a peer. Those three rules are what stop an
+admin from quietly taking a workspace over.
+
+**Invitations** grant membership at a fixed role. An invitation addressed to
+an email is single use; one without an email is a shareable link that may
+carry a use cap. Either can expire. Only the hash of an invite token is
+stored, because the token is a bearer credential.
+
+Membership is checked per request rather than read off the token, so a
+demotion takes effect immediately instead of when the JWT expires.
 
 ---
 
@@ -630,16 +643,14 @@ Version 1 should NOT include
 - Kubernetes
 - Marketplace
 - Billing
-- Teams
-- Role hierarchies and shared access
 - Plugin marketplace
 - Mobile application
 - 100+ integrations
 
-Note the distinction on that fifth line. Per-user ownership **is** in v1: the
-backend enforces that a caller only touches their own resources. What is out
-is everything above that — roles, teams, shared workspaces, and granting one
-user access to another's work.
+Teams and RBAC used to sit on this list and no longer do: workspaces, roles,
+and invitations are v1, described under Authentication above. What stays out
+is everything past a flat four-role membership — custom roles, per-resource
+grants, nested groups, and cross-workspace sharing.
 
 Build only what is necessary.
 
