@@ -165,6 +165,89 @@ Microservices are not a goal.
 
 ---
 
+# Services
+
+**This is the v1 target.** Every service below is in scope; they are packages
+inside one binary, not deployables. The names are roles, not process
+boundaries.
+
+## Frontend surfaces
+
+Dashboard, workflow builder (React Flow canvas), execution viewer, AI prompt
+UI, settings.
+
+## API server (Go, Chi)
+
+Authentication middleware, REST API, WebSocket gateway, request validation,
+authorization. Nothing else — it translates HTTP into calls on the services
+below and translates the results back.
+
+## Called by the API layer
+
+**Auth service**
+
+- Verify JWT
+- Build user context
+- Sessions
+- Permissions
+
+**Workflow service**
+
+- CRUD workflows
+- Graph validation
+- Versioning
+- Templates
+
+**Execution service**
+
+- Start execution
+- Retry
+- Cancel
+- Scheduling
+
+## Below the execution service
+
+**Workflow engine**
+
+Graph traversal, node execution, variables, branching, error handling. The
+heart of the platform, and it knows nothing about HTTP.
+
+**Credential service**
+
+- Encrypt keys
+- Decrypt keys
+- Rotate keys
+- OAuth tokens
+
+Secrets never leave this service in plaintext, and never reach logs,
+execution output, or AI prompts.
+
+**AI service**
+
+Prompt building, provider selection, model selection, response handling.
+
+**Integration service**
+
+GitHub, Slack, Discord, and generic HTTP.
+
+**Notification service**
+
+WebSocket fan-out and events. Email is future.
+
+**Execution logs**
+
+Live logs, audit trail, metrics.
+
+## Persistence
+
+PostgreSQL tables: users, workflows, versions, executions, logs, credentials,
+templates.
+
+External: AI providers via OpenRouter, and the GitHub, Slack, and Discord
+APIs plus arbitrary REST endpoints and inbound webhooks.
+
+---
+
 # Technology Stack
 
 ## Frontend
@@ -176,6 +259,9 @@ Microservices are not a goal.
 - React Flow
 - Zustand
 - TanStack Query
+- Better Auth
+
+Package manager: pnpm. Pinned in `package.json` via the `packageManager` field.
 
 ---
 
@@ -192,13 +278,40 @@ Microservices are not a goal.
 
 Provider abstraction.
 
-Possible providers
+Default provider
+
+- OpenRouter — one key, many models
+
+Also supported behind the same interface
 
 - OpenAI
 - Anthropic
 - Google Gemini
+- Azure (future)
 
-The application should never depend directly on one AI provider.
+The application should never depend directly on one AI provider. OpenRouter
+being the default does not make it special: it is one implementation of the
+interface, and no code outside the `ai` package names it.
+
+---
+
+## Credentials
+
+API keys and OAuth tokens are encrypted at rest and owned by one package.
+
+Responsibilities
+
+- Encrypt and decrypt
+- Rotate
+- Hold OAuth tokens
+
+Secrets are never written to logs, execution output, or AI prompts.
+
+---
+
+## Storage
+
+Local filesystem now. S3 later, for execution artifacts and uploads.
 
 ---
 
@@ -214,9 +327,37 @@ No Kubernetes initially.
 
 ## Authentication
 
+Better Auth owns the credential flow in the Next.js app.
+
 - Sign Up
 - Login
 - Sessions
+
+The Go backend does not hash passwords. It verifies the JWT, builds the user
+context, and answers session and permission questions.
+
+RBAC is in v1, scoped to a workspace.
+
+A **workspace** is what everything belongs to: workflows, executions, and
+credentials are owned by a workspace, not by a user directly, so access is a
+membership question. Each member holds one of four roles, strictly ordered:
+
+    VIEWER  read workflows and executions
+    MEMBER  + create, edit, delete, and run them
+    ADMIN   + manage credentials, members, and invitations
+    OWNER   + delete the workspace
+
+A workspace always keeps at least one owner, nobody may grant a role above
+their own, and nobody may act on a peer. Those three rules are what stop an
+admin from quietly taking a workspace over.
+
+**Invitations** grant membership at a fixed role. An invitation addressed to
+an email is single use; one without an email is a shareable link that may
+carry a use cap. Either can expire. Only the hash of an invite token is
+stored, because the token is a bearer credential.
+
+Membership is checked per request rather than read off the token, so a
+demotion takes effect immediately instead of when the JWT expires.
 
 ---
 
@@ -431,9 +572,10 @@ exactly one frontend app, so a workspace would be ceremony without payoff.
       internal/
         config/           environment loading; the only reader of env vars
         api/              HTTP transport: routing, decode, encode, middleware
-        auth/             signup, login, sessions, password hashing
-        workflow/         graph model, validation, persistence
+        auth/             JWT verification, user context, sessions, permissions
+        workflow/         graph model, validation, persistence, versions, templates
         execution/        the engine: runs nodes, tracks state, records logs
+        credential/       encrypt, decrypt, and rotate API keys and OAuth tokens
         ai/               provider abstraction; generation and AI nodes
         github/           pull requests, issues, comments, webhooks
         slack/            outbound messages
@@ -463,11 +605,16 @@ standard library's `net/http` at a call site.
 ## Dependency Direction
 
     api  ->  auth, workflow, execution
-    execution  ->  ai, github, slack, database, websocket
+    execution  ->  ai, github, slack, credential, database, websocket
     everything  ->  database, config
 
 Domain packages never import `api`. The engine never imports HTTP. Arrows
 point one way only; a cycle means a boundary was drawn wrong.
+
+`execution` resolves credentials and passes them to the integration and AI
+packages as arguments. Those packages never import `credential` themselves —
+that keeps key material on one path instead of every integration growing its
+own way to reach the vault.
 
 ---
 
@@ -496,11 +643,14 @@ Version 1 should NOT include
 - Kubernetes
 - Marketplace
 - Billing
-- Teams
-- RBAC
 - Plugin marketplace
 - Mobile application
 - 100+ integrations
+
+Teams and RBAC used to sit on this list and no longer do: workspaces, roles,
+and invitations are v1, described under Authentication above. What stays out
+is everything past a flat four-role membership — custom roles, per-resource
+grants, nested groups, and cross-workspace sharing.
 
 Build only what is necessary.
 
