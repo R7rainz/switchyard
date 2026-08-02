@@ -47,7 +47,7 @@ type Claims struct {
 
 // Verifier checks Better Auth JWTs against the issuer's published JWKS.
 //
-// It is safe for concurrent use and caches the key set in memory.
+// chaches the keyset in memory
 type Verifier struct {
 	jwksURL  string
 	issuer   string
