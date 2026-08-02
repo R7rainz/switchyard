@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 )
@@ -21,9 +23,13 @@ type TokenVerifier interface {
 
 // NewRouter builds the HTTP surface. Routing, encoding, and auth enforcement
 // live here; everything else belongs to the domain packages.
-func NewRouter(verifier TokenVerifier) http.Handler {
+func NewRouter(verifier TokenVerifier, logger zerolog.Logger) http.Handler {
 	router := chi.NewRouter()
 
+	// RequestID first, so every line the other middleware logs can be tied
+	// back to one request.
+	router.Use(middleware.RequestID)
+	router.Use(RequestLogger(logger))
 	// A panic in one handler should fail one request, not the process.
 	router.Use(middleware.Recoverer)
 
@@ -31,17 +37,49 @@ func NewRouter(verifier TokenVerifier) http.Handler {
 	router.Get("/healthz", handleHealthz)
 
 	router.Route("/api", func(r chi.Router) {
-		r.Use(RequireAuth(verifier))
+		r.Use(RequireAuth(verifier, logger))
 		r.Get("/me", handleMe)
 	})
 
 	return router
 }
 
+// RequestLogger records one line per request, after it completes, so the status
+// and duration are known.
+func RequestLogger(logger zerolog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			started := time.Now()
+			recorder := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+			next.ServeHTTP(recorder, r)
+
+			// Health checks arrive every few seconds and say nothing, so they
+			// log at debug and stay out of the way.
+			level := zerolog.InfoLevel
+			switch {
+			case r.URL.Path == "/healthz":
+				level = zerolog.DebugLevel
+			case recorder.Status() >= http.StatusInternalServerError:
+				level = zerolog.ErrorLevel
+			}
+
+			logger.WithLevel(level).
+				Str("method", r.Method).
+				Str("path", r.URL.Path).
+				Int("status", recorder.Status()).
+				Int("bytes", recorder.BytesWritten()).
+				Dur("duration", time.Since(started)).
+				Str("request_id", middleware.GetReqID(r.Context())).
+				Msg("request")
+		})
+	}
+}
+
 // RequireAuth returns middleware that rejects any request without a valid
 // Better Auth bearer token, and puts the verified claims on the request
 // context for the handlers below it.
-func RequireAuth(verifier TokenVerifier) func(http.Handler) http.Handler {
+func RequireAuth(verifier TokenVerifier, logger zerolog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r)
@@ -52,9 +90,16 @@ func RequireAuth(verifier TokenVerifier) func(http.Handler) http.Handler {
 
 			claims, err := verifier.Verify(r.Context(), token)
 			if err != nil {
-				// The reason stays server-side: which check failed is useful to
-				// an attacker probing tokens, and useless to an honest client,
-				// whose only move either way is to get a fresh token.
+				// The reason goes to the log, not the response: which check
+				// failed is useful to an attacker probing tokens, and useless
+				// to an honest client, whose only move either way is to get a
+				// fresh token. Operators still need it to tell a misconfigured
+				// issuer from an actual attack.
+				logger.Warn().
+					Err(err).
+					Str("path", r.URL.Path).
+					Str("request_id", middleware.GetReqID(r.Context())).
+					Msg("rejected token")
 				unauthorized(w, "invalid token")
 				return
 			}

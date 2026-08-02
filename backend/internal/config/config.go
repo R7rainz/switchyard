@@ -5,6 +5,8 @@ import (
 	"net/url"
 	"os"
 	"strings"
+
+	"github.com/rs/zerolog"
 )
 
 // Config is the runtime configuration for the API server.
@@ -18,6 +20,14 @@ type Config struct {
 
 	// AuthAudience is the "aud" this backend requires in a token.
 	AuthAudience string
+
+	// Development selects human-readable logs over JSON. It is the local
+	// default; anything deployed should set SWITCHYARD_ENV=production so logs
+	// stay machine-parseable.
+	Development bool
+
+	// LogLevel is the minimum level that reaches the log.
+	LogLevel zerolog.Level
 }
 
 // AuthJWKSURL is where the issuer publishes its public keys.
@@ -35,7 +45,14 @@ func Load() (Config, error) {
 		Addr:         envOr("SWITCHYARD_ADDR", ":8080"),
 		AuthIssuer:   envOr("SWITCHYARD_AUTH_ISSUER", "http://localhost:3007"),
 		AuthAudience: envOr("SWITCHYARD_AUTH_AUDIENCE", "switchyard-backend"),
+		Development:  envOr("SWITCHYARD_ENV", "development") != "production",
 	}
+
+	level, err := zerolog.ParseLevel(envOr("SWITCHYARD_LOG_LEVEL", "info"))
+	if err != nil {
+		return Config{}, fmt.Errorf("config: SWITCHYARD_LOG_LEVEL: %w", err)
+	}
+	cfg.LogLevel = level
 
 	// A relative or malformed issuer would make every token comparison fail in
 	// a way that looks like a bad token, so reject it at startup instead.

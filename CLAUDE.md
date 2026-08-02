@@ -135,7 +135,8 @@ interface, same as the rest.
   "invalid token" — which check failed is useful to someone probing tokens and
   useless to an honest client, whose only move either way is to get a new one.
 - `backend/internal/config/config.go` — the only reader of env vars:
-  `SWITCHYARD_ADDR`, `SWITCHYARD_AUTH_ISSUER`, `SWITCHYARD_AUTH_AUDIENCE`. A
+  `SWITCHYARD_ADDR`, `SWITCHYARD_AUTH_ISSUER`, `SWITCHYARD_AUTH_AUDIENCE`,
+  `SWITCHYARD_ENV`, `SWITCHYARD_LOG_LEVEL`. A
   non-absolute issuer is a startup error, since it would otherwise surface as
   every token looking invalid.
 
@@ -159,8 +160,26 @@ With a valid token the same path correctly 404s. A route that must be public
 belongs outside the group, like `/healthz`.
 
 `middleware.Recoverer` is mounted so a panic fails one request instead of the
-process. Chi's `Logger` is deliberately not mounted yet — logging should be
-decided once, properly, rather than inherited by default.
+process.
+
+### Logging
+
+**zerolog**, built in `main.go` and passed explicitly into `api.NewRouter`.
+Chi's own `Logger` is not mounted — `RequestLogger` in `api.go` replaces it and
+emits structured fields instead of formatted text.
+
+    SWITCHYARD_ENV=development   # console output; "production" switches to JSON
+    SWITCHYARD_LOG_LEVEL=info    # trace|debug|info|warn|error|fatal|panic
+
+One line per request, after it completes, carrying method, path, status, bytes,
+duration, and the Chi request ID. `/healthz` logs at **debug** — a load balancer
+polls it every few seconds and it would otherwise drown everything else. A 5xx
+logs at error.
+
+**Rejected tokens are logged at warn with the real reason**, while the response
+still says only "invalid token". Operators need to tell a misconfigured issuer
+from an actual attack; the client does not get that detail. Keep that split when
+adding auth failure paths.
 
 **`BETTER_AUTH_SECRET` encrypts the JWKS private key stored in the `jwks`
 table.** Changing the secret without clearing that table makes every token mint
