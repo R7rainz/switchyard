@@ -34,6 +34,13 @@ type Config struct {
 	// CredentialKeyVersion is the version new credentials are sealed under.
 	CredentialKeyVersion int
 
+	// DatabaseURL points at PostgreSQL. It carries the password, so it is
+	// secret: log the fact of a connection, never this string.
+	DatabaseURL string
+
+	// DatabaseMaxConns bounds the pool. Zero leaves pgx's default.
+	DatabaseMaxConns int32
+
 	// Development selects human-readable logs over JSON. It is the local
 	// default; anything deployed should set SWITCHYARD_ENV=production so logs
 	// stay machine-parseable.
@@ -58,7 +65,23 @@ func Load() (Config, error) {
 		Addr:         envOr("SWITCHYARD_ADDR", ":8080"),
 		AuthIssuer:   envOr("SWITCHYARD_AUTH_ISSUER", "http://localhost:3007"),
 		AuthAudience: envOr("SWITCHYARD_AUTH_AUDIENCE", "switchyard-backend"),
+		DatabaseURL:  os.Getenv("DATABASE_URL"),
 		Development:  envOr("SWITCHYARD_ENV", "development") != "production",
+	}
+
+	// DATABASE_URL rather than a SWITCHYARD_ prefix: the frontend, the psql
+	// client, and every Postgres tool already read that name, and having two
+	// spellings of one connection string is how they drift apart.
+	if cfg.DatabaseURL == "" {
+		return Config{}, fmt.Errorf("config: DATABASE_URL must be set")
+	}
+
+	if raw := os.Getenv("SWITCHYARD_DB_MAX_CONNS"); raw != "" {
+		parsed, err := strconv.ParseInt(raw, 10, 32)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("config: SWITCHYARD_DB_MAX_CONNS must be a positive number")
+		}
+		cfg.DatabaseMaxConns = int32(parsed)
 	}
 
 	keys, current, err := credentialKeys(os.Getenv(credentialKeyEnv))

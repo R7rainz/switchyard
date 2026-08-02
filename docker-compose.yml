@@ -13,10 +13,10 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-5434}:5432"
     volumes:
       - switchyard_postgres_data:/var/lib/postgresql/data
-      # Applied in filename order, but only when the volume is empty — this is
-      # first-boot seeding, not a migration tool. Once the project has a
-      # migration runner, drop this mount and let the runner own the schema.
-      - ./backend/migrations:/docker-entrypoint-initdb.d:ro
+      # No init-directory mount any more. It only ran on an empty volume, so a
+      # migration added later never reached an existing database — which is
+      # exactly how 0002_credentials went missing. The server now applies
+      # migrations itself at startup.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-switchyard} -d ${POSTGRES_DB:-switchyard}"]
       interval: 5s

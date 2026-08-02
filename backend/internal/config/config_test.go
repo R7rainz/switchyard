@@ -10,13 +10,19 @@ import (
 // it. Load requires one, so every case here has to set it.
 var testCredentialKey = base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", credentialKeySize)))
 
-func setCredentialKey(t *testing.T) {
+// testDatabaseURL is never connected to; Load only checks that it is set.
+const testDatabaseURL = "postgres://switchyard:switchyard@localhost:5434/switchyard"
+
+// setRequired sets everything Load refuses to start without, so each test only
+// has to set the thing it is actually about.
+func setRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv(credentialKeyEnv, "1:"+testCredentialKey)
+	t.Setenv("DATABASE_URL", testDatabaseURL)
 }
 
 func TestLoadDefaults(t *testing.T) {
-	setCredentialKey(t)
+	setRequired(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -31,7 +37,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadReadsEnvironment(t *testing.T) {
-	setCredentialKey(t)
+	setRequired(t)
 	t.Setenv("SWITCHYARD_ADDR", ":9000")
 	t.Setenv("SWITCHYARD_AUTH_ISSUER", "https://switchyard.example/")
 	t.Setenv("SWITCHYARD_AUTH_AUDIENCE", "other-backend")
@@ -55,7 +61,7 @@ func TestLoadReadsEnvironment(t *testing.T) {
 func TestLoadRejectsBadIssuer(t *testing.T) {
 	for _, issuer := range []string{"localhost:3007", "/api", "not a url"} {
 		t.Run(issuer, func(t *testing.T) {
-			setCredentialKey(t)
+			setRequired(t)
 			t.Setenv("SWITCHYARD_AUTH_ISSUER", issuer)
 			if _, err := Load(); err == nil {
 				t.Errorf("Load accepted issuer %q", issuer)
@@ -66,6 +72,7 @@ func TestLoadRejectsBadIssuer(t *testing.T) {
 
 func TestLoadReadsCredentialKeys(t *testing.T) {
 	older := base64.StdEncoding.EncodeToString([]byte(strings.Repeat("o", credentialKeySize)))
+	t.Setenv("DATABASE_URL", testDatabaseURL)
 	// Newest first, which is the rule the variable documents.
 	t.Setenv(credentialKeyEnv, "2:"+testCredentialKey+", 1:"+older)
 
@@ -100,6 +107,7 @@ func TestLoadRejectsBadCredentialKeys(t *testing.T) {
 	}
 	for name, value := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Setenv("DATABASE_URL", testDatabaseURL)
 			t.Setenv(credentialKeyEnv, value)
 			_, err := Load()
 			if err == nil {
@@ -108,6 +116,29 @@ func TestLoadRejectsBadCredentialKeys(t *testing.T) {
 			// The key itself must never be echoed back in the complaint.
 			if strings.Contains(err.Error(), testCredentialKey) {
 				t.Errorf("error leaks the key: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoadRequiresDatabaseURL(t *testing.T) {
+	// Nothing this server does works without a database, so an unset URL is a
+	// startup error rather than a connection failure on the first request.
+	t.Setenv(credentialKeyEnv, "1:"+testCredentialKey)
+	t.Setenv("DATABASE_URL", "")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("Load accepted a missing DATABASE_URL")
+	}
+}
+
+func TestLoadRejectsBadMaxConns(t *testing.T) {
+	for _, value := range []string{"0", "-4", "lots"} {
+		t.Run(value, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("SWITCHYARD_DB_MAX_CONNS", value)
+			if _, err := Load(); err == nil {
+				t.Errorf("Load accepted SWITCHYARD_DB_MAX_CONNS=%q", value)
 			}
 		})
 	}
