@@ -162,6 +162,33 @@ belongs outside the group, like `/healthz`.
 `middleware.Recoverer` is mounted so a panic fails one request instead of the
 process.
 
+### Permissions
+
+**Ownership is the whole model.** A workflow, execution, or credential belongs
+to exactly one user, and that user is the only one who may touch it. No roles,
+no teams, no sharing — so there is nothing to grant beyond "is this yours".
+
+`auth.UserID(ctx)` returns the caller's id, and it is the value **every
+owner-scoped query must filter by**. Ownership belongs in the `WHERE` clause,
+not in a check after loading: a forgotten predicate returns someone else's row,
+a forgotten check is merely a missing guard on a row you should not have read.
+`auth.RequireOwner(ctx, ownerID)` is the backstop for paths where the resource
+is already in hand, not the primary defence.
+
+Handlers return domain errors and call `writeError`, which owns the mapping:
+
+    auth.ErrNoIdentity  -> 401
+    auth.ErrNotOwner    -> 404      (not 403)
+    anything else       -> 500, cause logged, generic body
+
+**404 for another user's resource is deliberate.** A 403 confirms the resource
+exists, which lets any account probe for other users' ids. Someone else's
+resource and a resource that never existed must be indistinguishable. There is
+a test asserting the two responses match.
+
+An empty `ownerID` never matches a caller — a row with no owner is a bug
+somewhere else, and treating it as public would turn that bug into a leak.
+
 ### Logging
 
 **zerolog**, built in `main.go` and passed explicitly into `api.NewRouter`.

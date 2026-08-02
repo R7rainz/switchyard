@@ -52,6 +52,10 @@ func RequestLogger(logger zerolog.Logger) func(http.Handler) http.Handler {
 			started := time.Now()
 			recorder := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
+			// Carry the logger on the context so handlers below can log
+			// without every signature growing a logger parameter.
+			r = r.WithContext(logger.WithContext(r.Context()))
+
 			next.ServeHTTP(recorder, r)
 
 			// Health checks arrive every few seconds and say nothing, so they
@@ -120,7 +124,7 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 	claims, ok := auth.FromContext(r.Context())
 	if !ok {
 		// Only reachable if this handler is mounted without RequireAuth.
-		unauthorized(w, "invalid token")
+		writeError(w, r, auth.ErrNoIdentity)
 		return
 	}
 
