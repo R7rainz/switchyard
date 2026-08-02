@@ -12,7 +12,7 @@ import (
 const KeySize = 32
 
 // ErrDecrypt is what every failed decryption returns. A wrong key, a tampered
-// ciphertext, and a row copied from another user are one error on purpose:
+// ciphertext, and a row copied from another workspace are one error on purpose:
 // telling them apart helps whoever is doing it, and helps no one else.
 var ErrDecrypt = errors.New("credential: decryption failed")
 
@@ -121,12 +121,12 @@ func (k *Keyring) open(version int, ciphertext, nonce, aad []byte) (Secret, erro
 }
 
 // aad binds a ciphertext to the row it belongs to. Anyone able to write the
-// database could otherwise paste another user's ciphertext into their own row
-// and have this service decrypt it for them; with the owner and the
+// database could otherwise paste another workspace's ciphertext into their own
+// row and have this service decrypt it for them; with the workspace and the
 // credential's identity authenticated, that forgery simply fails to open.
 //
 // NUL separates the fields so no two different triples can build the same
 // bytes.
-func aad(ownerID, provider, name string) []byte {
-	return []byte(ownerID + "\x00" + provider + "\x00" + name)
+func aad(workspaceID, provider, name string) []byte {
+	return []byte(workspaceID + "\x00" + provider + "\x00" + name)
 }

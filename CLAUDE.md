@@ -323,8 +323,28 @@ the rules that matter most when writing code:
   visualizes, the backend executes.
 - Services from the map above land in the `internal/` package that already
   claims them — integrations in `github`/`slack`, notifications in `websocket`,
-  logs in `execution`. Only credential handling has no home yet; give it its own
-  package when it is built, rather than smearing key material across others.
+  logs in `execution`. Key material stays in `internal/credential` rather than
+  being smeared across the packages that use it.
+
+### Credentials
+
+**Scoped to a workspace, not a user.** A credential belongs to the workspace,
+so a key one member saves is the key everyone's workflows run with, and
+`credential:manage` at ADMIN decides which keys exist. `0002` originally scoped
+them to a user; `0004` moved them.
+
+`credential` scopes but does not authorize — it takes a workspace id and
+trusts it. Whether the caller may touch that workspace is settled earlier, by
+`api.RequirePermission(svc, auth.PermissionCredentialManage)`. Keeping the
+check in the transport layer means one place decides, rather than every
+package inventing its own opinion.
+
+The workspace id is also baked into the GCM additional data
+(`workspace\0provider\0name`), so it is a second lock rather than only a query
+predicate: a ciphertext moved between workspaces fails to open. `Service.Get`
+builds that binding from the workspace it was *asked* for, so a store that ever
+dropped its `WHERE` clause returns a decryption failure instead of another
+workspace's key.
 
 ## Commands
 
