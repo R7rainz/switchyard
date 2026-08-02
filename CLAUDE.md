@@ -73,13 +73,36 @@ templates.
 
 | Layer     | Choice                | Note                                     |
 | --------- | --------------------- | ---------------------------------------- |
-| Frontend  | Next.js + React       | shadcn/ui + Tailwind, React Flow canvas   |
+| Frontend  | Next.js + React       | Full breakdown below                     |
 | Auth      | **Better Auth**       | Runs in Next.js; Go **verifies** the JWT  |
 | Backend   | Go + Chi              |                                          |
 | Database  | PostgreSQL            | JSON columns for graphs                  |
 | Realtime  | WebSockets            | Live execution updates                   |
 | AI        | Provider abstraction  | Default **OpenRouter** — one key, many models; OpenAI/Anthropic/Gemini behind the same interface, Azure later |
 | Storage   | Local now, S3 later   | Execution artifacts and uploads          |
+
+### Frontend stack
+
+| Layer           | Technology            | Why                                                                         |
+| --------------- | --------------------- | --------------------------------------------------------------------------- |
+| Framework       | Next.js (App Router)  | Modern React framework with Server Components and routing                   |
+| Language        | TypeScript            | Type safety across the frontend                                             |
+| Styling         | Tailwind CSS          | Utility-first styling                                                       |
+| UI Components   | shadcn/ui             | Accessible, customizable component library                                  |
+| Icons           | Lucide React          | Consistent icon set                                                         |
+| Workflow Canvas | React Flow            | Visual node-based workflow editor                                           |
+| Server State    | **TanStack Query**    | API fetching, caching, mutations, optimistic updates, background refetching |
+| Client State    | Zustand               | UI state like selected node, sidebar, canvas preferences, dialogs           |
+| Forms           | React Hook Form + Zod | Performant forms with schema validation                                     |
+| Authentication  | Better Auth           | Authentication with JWT verification for the Go backend                     |
+| Realtime        | Native WebSockets     | Live workflow execution and logs                                            |
+
+**The state split is the rule to follow**: anything that came from the API
+belongs to TanStack Query, and anything that is purely UI belongs to Zustand.
+Copying server data into a Zustand store is how the two drift apart.
+
+Of these, only Next.js, TypeScript, Tailwind, and Better Auth are installed.
+The rest arrive with the features that need them — do not add them in advance.
 
 Two consequences worth remembering: Better Auth means signup, login, and
 password hashing live in the frontend, so `internal/auth` is JWT verification
