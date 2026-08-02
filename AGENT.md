@@ -165,6 +165,89 @@ Microservices are not a goal.
 
 ---
 
+# Services
+
+**This is the v1 target.** Every service below is in scope; they are packages
+inside one binary, not deployables. The names are roles, not process
+boundaries.
+
+## Frontend surfaces
+
+Dashboard, workflow builder (React Flow canvas), execution viewer, AI prompt
+UI, settings.
+
+## API server (Go, Chi)
+
+Authentication middleware, REST API, WebSocket gateway, request validation,
+authorization. Nothing else — it translates HTTP into calls on the services
+below and translates the results back.
+
+## Called by the API layer
+
+**Auth service**
+
+- Verify JWT
+- Build user context
+- Sessions
+- Permissions
+
+**Workflow service**
+
+- CRUD workflows
+- Graph validation
+- Versioning
+- Templates
+
+**Execution service**
+
+- Start execution
+- Retry
+- Cancel
+- Scheduling
+
+## Below the execution service
+
+**Workflow engine**
+
+Graph traversal, node execution, variables, branching, error handling. The
+heart of the platform, and it knows nothing about HTTP.
+
+**Credential service**
+
+- Encrypt keys
+- Decrypt keys
+- Rotate keys
+- OAuth tokens
+
+Secrets never leave this service in plaintext, and never reach logs,
+execution output, or AI prompts.
+
+**AI service**
+
+Prompt building, provider selection, model selection, response handling.
+
+**Integration service**
+
+GitHub, Slack, Discord, and generic HTTP.
+
+**Notification service**
+
+WebSocket fan-out and events. Email is future.
+
+**Execution logs**
+
+Live logs, audit trail, metrics.
+
+## Persistence
+
+PostgreSQL tables: users, workflows, versions, executions, logs, credentials,
+templates.
+
+External: AI providers via OpenRouter, and the GitHub, Slack, and Discord
+APIs plus arbitrary REST endpoints and inbound webhooks.
+
+---
+
 # Technology Stack
 
 ## Frontend
@@ -252,6 +335,16 @@ Better Auth owns the credential flow in the Next.js app.
 
 The Go backend does not hash passwords. It verifies the JWT, builds the user
 context, and answers session and permission questions.
+
+Permissions are in v1. A workflow, execution, and credential belongs to a
+user, and the backend enforces that — a caller may only read, change, run, or
+delete what is theirs. That enforcement lives with the queries it guards, so
+ownership is a predicate on every lookup rather than a check someone can
+forget to call.
+
+This is per-user ownership, not a role system. Teams, shared workspaces, and
+role hierarchies remain out of v1, so nothing yet grants one user access to
+another's resources.
 
 ---
 
@@ -538,10 +631,15 @@ Version 1 should NOT include
 - Marketplace
 - Billing
 - Teams
-- RBAC
+- Role hierarchies and shared access
 - Plugin marketplace
 - Mobile application
 - 100+ integrations
+
+Note the distinction on that fifth line. Per-user ownership **is** in v1: the
+backend enforces that a caller only touches their own resources. What is out
+is everything above that — roles, teams, shared workspaces, and granting one
+user access to another's work.
 
 Build only what is necessary.
 
