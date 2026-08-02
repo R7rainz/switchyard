@@ -2,6 +2,7 @@
 package main
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/config"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/database"
+	"github.com/R7rainz/switchyard/backend/migrations"
 )
 
 func main() {
@@ -36,6 +39,38 @@ func main() {
 	// should stop the process now, not the first time someone saves a token.
 	if _, err := credential.NewKeyring(cfg.CredentialKeyVersion, cfg.CredentialKeys); err != nil {
 		logger.Fatal().Err(err).Msg("credential keys unusable")
+	}
+
+	// Bound startup separately from the request timeouts below: an unreachable
+	// database should fail the boot, not hang it.
+	startupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	pool, err := database.Connect(startupCtx, database.Options{
+		URL:            cfg.DatabaseURL,
+		MaxConns:       cfg.DatabaseMaxConns,
+		ConnectTimeout: 10 * time.Second,
+	})
+	if err != nil {
+		logger.Fatal().Err(err).Msg("database unavailable")
+	}
+	defer pool.Close()
+
+	applied, err := database.Migrate(startupCtx, pool, migrations.FS)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("migrations failed")
+	}
+	for _, migration := range applied {
+		logger.Info().Int64("version", migration.Version).Str("name", migration.Name).Msg("migration applied")
+	}
+	if len(applied) == 0 {
+		logger.Debug().Msg("schema already up to date")
+	}
+
+	// A binary older than the schema it is pointed at is the usual way a
+	// rollback goes wrong quietly.
+	if err := database.Verify(startupCtx, pool, migrations.FS); err != nil {
+		logger.Fatal().Err(err).Msg("schema is ahead of this build")
 	}
 
 	server := &http.Server{

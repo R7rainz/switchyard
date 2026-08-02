@@ -222,6 +222,46 @@ cannot be used to demote an admin.
 queries filter by. `auth.RequireOwner` remains for rows owned by a user
 directly rather than a workspace.
 
+### Database
+
+**pgx v5** with `pgxpool`, opened in `main.go` and passed down. `database.Pool`
+is a type alias for `*pgxpool.Pool` rather than a wrapper — wrapping would mean
+re-exporting every method a caller needs, one at a time, forever.
+
+`DATABASE_URL` is **required** to boot, and uses that name rather than a
+`SWITCHYARD_` prefix because the frontend, `psql`, and every Postgres tool
+already read it; two spellings of one connection string is how they drift.
+`SWITCHYARD_DB_MAX_CONNS` bounds the pool.
+
+`database.Connect` pings before returning. pgxpool connects lazily, so without
+that a bad URL would look like a healthy start and fail on the first request.
+
+**Migrations run at startup**, from `backend/migrations` embedded via
+`migrations.FS`:
+
+- ordered by the **number** in the filename, not lexically, so 10 comes after 9
+- each migration and the row recording it share one transaction, so a failure
+  leaves neither a half-applied schema nor a false record — Postgres has
+  transactional DDL, which is what makes that work
+- a Postgres advisory lock serialises instances starting together
+- `Verify` refuses to start a binary older than the schema it is pointed at,
+  which is the usual way a rollback goes wrong quietly
+
+Add a migration as `NNNN_name.sql` and nothing else — no registration step. Two
+files sharing a version, an unnumbered name, or an empty file all fail at test
+time rather than at boot.
+
+**Queries do not live here.** `database` owns the pool and the schema; each
+domain package declares its own `Store` interface and its own SQL. Putting
+every query in one package is how it becomes the package everything imports and
+nothing can be tested without.
+
+Integration tests need a database and skip without one. It drops and recreates
+the `public` schema, so never point it at anything you care about:
+
+    SWITCHYARD_TEST_DATABASE_URL=postgres://postgres:t@localhost:55433/switchyard \
+      go test ./internal/database/
+
 ### Logging
 
 **zerolog**, built in `main.go` and passed explicitly into `api.NewRouter`.
@@ -294,11 +334,50 @@ Postgres, from the repo root:
     docker compose down       # add -v to drop the volume and reseed on next up
 
 Port 5434, not 5432 — other projects on this machine hold the lower ports.
-`backend/migrations/` is mounted as the image's init directory, so the schema
-seeds automatically on the **first** boot of an empty volume. Changing a
-migration after that requires `down -v` or applying it by hand.
+
+**The server applies migrations itself at startup**; compose no longer mounts
+an init directory. That mount only ran on an empty volume, so a migration added
+later never reached an existing database — which is how `0002_credentials` came
+to be missing from the dev database while its file sat in the repo.
+
+**The local dev database has already been fixed this way** — it was baselined
+at 0001 and 0003, the server then applied the missing `0002_credentials`, and
+its six users were kept. The rest of this note is for any other database seeded
+by the old mount.
+
+Such a database has the tables but no `schema_migrations`, so the runner tries
+to re-apply `0001` and stops with `relation "user" already exists`. It fails
+cleanly and changes nothing. Either `docker compose down -v`, or record what is
+already there once:
+
+    create table if not exists "schema_migrations" (
+      "version" bigint primary key, "name" text not null,
+      "appliedAt" timestamptz default CURRENT_TIMESTAMP not null);
+    insert into "schema_migrations" ("version","name")
+      values (1,'0001_better_auth.sql'), (3,'0003_workspaces.sql')
+      on conflict do nothing;
+
+The next start then applies only what is genuinely missing.
 
 Backend (`backend/`, Go 1.26, module `github.com/R7rainz/switchyard/backend`):
+
+`config.Load` reads `backend/.env` if it is there, so `go run` works in a bare
+shell. **A variable already set in the environment always wins**, so
+`DATABASE_URL=... go run ./cmd/switchyard` means what it says. `.env` and
+`.env.example` are both gitignored, so a fresh clone has neither — these are
+the variables to put in one:
+
+    DATABASE_URL                # same database the frontend uses, port 5434
+    SWITCHYARD_CREDENTIAL_KEY   # 1:$(openssl rand -base64 32), newest first
+    SWITCHYARD_AUTH_ISSUER      # must equal the frontend's BETTER_AUTH_URL
+    SWITCHYARD_AUTH_AUDIENCE    # switchyard-backend
+    SWITCHYARD_ADDR             # :8080
+    SWITCHYARD_ENV              # development | production
+    SWITCHYARD_LOG_LEVEL        # trace|debug|info|warn|error|fatal|panic
+
+`DATABASE_URL` and `SWITCHYARD_CREDENTIAL_KEY` are required; the server refuses
+to start without them.
+
 
     go run ./cmd/switchyard     # :8080, override with SWITCHYARD_ADDR
     go build ./...
