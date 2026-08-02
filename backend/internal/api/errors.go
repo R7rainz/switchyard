@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/rs/zerolog"
@@ -14,11 +15,32 @@ import (
 // its middleware needs. It is a wiring bug, so it is a 500.
 var errNoWorkspace = errors.New("api: route has no workspaceID parameter")
 
+// invalidRequest is something the client can fix: a malformed body, a missing
+// field, a role that is not a role. Its detail is safe to return, unlike a
+// domain error's — the client wrote the body, so it learns nothing about
+// anyone else by being told what is wrong with it.
+type invalidRequest struct{ message string }
+
+func (e invalidRequest) Error() string { return "api: " + e.message }
+
+// invalid builds a rejection for writeError, so validation failures pick their
+// status in the same place every other error does.
+func invalid(format string, args ...any) error {
+	return invalidRequest{message: fmt.Sprintf(format, args...)}
+}
+
 // writeError turns a domain error into a response. Handlers call this instead
 // of choosing status codes themselves, so the mapping stays in one place and
 // cannot drift between endpoints.
 func writeError(w http.ResponseWriter, r *http.Request, err error) {
+	var bad invalidRequest
+
 	switch {
+	case errors.As(err, &bad):
+		// 400 before anything else: a body we could not read never reached a
+		// rule, so nothing further about it has been decided.
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": bad.message})
+
 	case errors.Is(err, auth.ErrNoIdentity):
 		unauthorized(w, "invalid token")
 

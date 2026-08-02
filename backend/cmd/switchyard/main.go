@@ -17,6 +17,7 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/config"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
+	"github.com/R7rainz/switchyard/backend/internal/workspace"
 	"github.com/R7rainz/switchyard/backend/migrations"
 )
 
@@ -34,10 +35,10 @@ func main() {
 
 	verifier := auth.NewVerifier(cfg.AuthJWKSURL(), cfg.AuthIssuer, cfg.AuthAudience)
 
-	// Nothing can be wired to the credential service until there is a store for
-	// it, but the master keys are checked here anyway: a key AES will not take
-	// should stop the process now, not the first time someone saves a token.
-	if _, err := credential.NewKeyring(cfg.CredentialKeyVersion, cfg.CredentialKeys); err != nil {
+	// A key AES will not take should stop the process now, not the first time
+	// someone saves a token.
+	keyring, err := credential.NewKeyring(cfg.CredentialKeyVersion, cfg.CredentialKeys)
+	if err != nil {
 		logger.Fatal().Err(err).Msg("credential keys unusable")
 	}
 
@@ -73,9 +74,18 @@ func main() {
 		logger.Fatal().Err(err).Msg("schema is ahead of this build")
 	}
 
+	// The store goes to the router as well as to the service: listing a user's
+	// own workspaces is the one read the service does not expose yet.
+	workspaceStore := workspace.NewPostgresStore(pool)
+	workspaces := workspace.NewService(workspaceStore)
+	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
+
+	// The issuer is the frontend's base URL, so it is also where an invite link
+	// has to send someone: accepting needs a signed-in user, which only the
+	// frontend can produce.
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: api.NewRouter(verifier, logger),
+		Handler: api.NewRouter(verifier, logger, workspaces, credentials, cfg.AuthIssuer),
 		// Bound how long a connection can sit half-open holding a slot.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
