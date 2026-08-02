@@ -1,0 +1,229 @@
+# CLAUDE.md
+
+**`AGENT.md` is the source of truth for vision, principles, and package
+boundaries.** Read it before any non-trivial change. This file distills it, adds
+the commands it does not list, and records the service/stack decisions made
+after it was written (see "Service map" and "Stack decisions" — where those two
+disagree with AGENT.md, they are newer).
+
+The code on disk is a skeleton — an empty `main.go`, `doc.go` stubs, and
+untouched create-next-app output. Do not infer patterns, conventions, or scope
+from it. AGENT.md describes what this is meant to become; the files describe
+nothing yet.
+
+## What Switchyard is
+
+An AI-powered workflow automation platform for software teams. The user
+describes a workflow in natural language, AI generates an **editable visual
+graph**, and the user inspects and edits it before anything executes.
+
+Built for engineers, DevOps, and platform teams — deliberately *not* a
+general-purpose Zapier. Marketing, HR, and sales automation are out of scope.
+
+## Principles that constrain every change
+
+- **AI assists, never owns.** Every AI-generated action must be editable by the
+  user. AI accelerates workflow creation; it does not replace developer control.
+- **Explainability.** Execution is never a black box. What happened, why, what
+  data was used, which AI response came back, which node failed — all visible.
+- **Deterministic execution.** A saved workflow executes the same way until the
+  user intentionally changes it.
+- **Developer first.** The UI must never make a developer feel constrained.
+- **Simplicity.** Introduce infrastructure only when there is a real need.
+- Prefer boring, explicit, readable code. Small interfaces, composition over
+  inheritance, clear package boundaries. No clever code.
+
+## Architecture
+
+Next.js frontend → REST + WebSocket → Go API server (Chi) → services → workflow
+engine → PostgreSQL and external APIs. **Modular monolith** — the "services"
+below are packages in one binary, not deployables. Microservices are not a goal.
+
+Frontend surfaces: dashboard, workflow builder (React Flow canvas), execution
+viewer, AI prompt UI, settings.
+
+The Go API server owns auth middleware, REST routing, the WebSocket gateway,
+request validation, and authorization — nothing else.
+
+### Service map
+
+Called by the API layer:
+
+- **Auth** — verify JWT, build user context, sessions, permissions.
+- **Workflow** — CRUD, graph validation, versioning, templates.
+- **Execution** — start, retry, cancel, schedule.
+
+Below execution:
+
+- **Workflow engine** — graph traversal, node execution, variables, branching,
+  error handling. The heart of the platform; knows nothing about HTTP.
+- **Credential service** — encrypt/decrypt/rotate provider keys, OAuth tokens.
+  Secrets never leave it in plaintext and never land in logs or execution
+  output.
+- **AI service** — prompt building, provider selection, model selection,
+  response handling.
+- **Integration service** — GitHub, Slack, Discord, generic HTTP.
+- **Notification service** — WebSocket fan-out and events (email is future).
+- **Execution logs** — live logs, audit trail, metrics.
+
+PostgreSQL tables: users, workflows, versions, executions, logs, credentials,
+templates.
+
+### Stack decisions
+
+| Layer     | Choice                | Note                                     |
+| --------- | --------------------- | ---------------------------------------- |
+| Frontend  | Next.js + React       | shadcn/ui + Tailwind, React Flow canvas   |
+| Auth      | **Better Auth**       | Runs in Next.js; Go **verifies** the JWT  |
+| Backend   | Go + Chi              |                                          |
+| Database  | PostgreSQL            | JSON columns for graphs                  |
+| Realtime  | WebSockets            | Live execution updates                   |
+| AI        | Provider abstraction  | Default **OpenRouter** — one key, many models; OpenAI/Anthropic/Gemini behind the same interface, Azure later |
+| Storage   | Local now, S3 later   | Execution artifacts and uploads          |
+
+Two consequences worth remembering: Better Auth means signup, login, and
+password hashing live in the frontend, so `internal/auth` is JWT verification
+and session/permission lookup only. And OpenRouter being the default never
+justifies calling it directly — it is one implementation behind the AI provider
+interface, same as the rest.
+
+### Auth wiring, as built
+
+- `frontend/src/lib/auth.ts` — the Better Auth server instance: pg pool,
+  email/password, and the `jwt` plugin issuing 15-minute tokens with issuer
+  `BETTER_AUTH_URL` and audience `switchyard-backend`.
+- `frontend/src/app/api/auth/[...all]/route.ts` — mounts the handler.
+- `frontend/src/lib/auth-client.ts` — React client plus `getToken()`, which the
+  frontend calls per request to the Go API.
+- `backend/migrations/0001_better_auth.sql` — generated tables: `user`,
+  `session`, `account`, `verification`, `jwks`. Regenerate with `pnpm
+  gen:schema`, do not hand-edit.
+
+- `backend/internal/auth/jwt.go` — `Verifier.Verify` fetches the JWKS from
+  `/api/auth/jwks`, caches it, and checks signature, issuer, audience, and
+  expiry. **Ed25519 only, by deliberate choice**: a token naming any other alg
+  is rejected before a key is selected, so algorithm-confusion attacks have
+  nowhere to land. That is why the backend needs no JWT dependency —
+  `crypto/ed25519` is stdlib. Do not "generalize" it to accept more algorithms.
+
+- `backend/internal/api/api.go` — `RequireAuth` middleware: pulls the bearer
+  token, verifies it, and puts the claims on the request context via
+  `auth.NewContext`. Handlers read them with `auth.FromContext`. A 401 says only
+  "invalid token" — which check failed is useful to someone probing tokens and
+  useless to an honest client, whose only move either way is to get a new one.
+- `backend/internal/config/config.go` — the only reader of env vars:
+  `SWITCHYARD_ADDR`, `SWITCHYARD_AUTH_ISSUER`, `SWITCHYARD_AUTH_AUDIENCE`. A
+  non-absolute issuer is a startup error, since it would otherwise surface as
+  every token looking invalid.
+
+`scripts/verify-auth.mjs` performs the same check in JS against a live server;
+`jwt_test.go` covers the Go side, including a captured real token as a golden
+case so a Better Auth format change fails a test rather than production.
+
+**Routing is Chi** (`github.com/go-chi/chi/v5`, the backend's only dependency),
+chosen for readability. Protected routes go inside the `/api` group, which
+applies `RequireAuth` to the whole subtree:
+
+    router.Route("/api", func(r chi.Router) {
+        r.Use(RequireAuth(verifier))
+        r.Get("/me", handleMe)
+    })
+
+One consequence: an unknown path under `/api` answers **401, not 404**, because
+group middleware runs before the subtree resolves a route. That is the better
+default — it stops an unauthenticated caller enumerating which endpoints exist.
+With a valid token the same path correctly 404s. A route that must be public
+belongs outside the group, like `/healthz`.
+
+`middleware.Recoverer` is mounted so a panic fails one request instead of the
+process. Chi's `Logger` is deliberately not mounted yet — logging should be
+decided once, properly, rather than inherited by default.
+
+**`BETTER_AUTH_SECRET` encrypts the JWKS private key stored in the `jwks`
+table.** Changing the secret without clearing that table makes every token mint
+fail with `Failed to decrypt private key` — while `/api/auth/jwks` keeps
+serving the stale public key, so the symptom is a 500 on `/token`, not on the
+key set. Fix: `truncate jwks`, or put the old secret back.
+
+**The frontend is pinned to port 3007** via `--port` in `package.json`, because
+3000 and 3001 belong to other projects on this machine and Next silently drifts
+to a free port when its default is taken. `BETTER_AUTH_URL` becomes the token
+issuer and the Go verifier compares it exactly, so the port and that variable
+have to move together — changing one alone breaks verification quietly.
+
+To check both sides agree against a running server:
+
+    SWITCHYARD_LIVE_ISSUER=http://localhost:3007 \
+    SWITCHYARD_LIVE_TOKEN=$(curl -s -b cookies.txt http://localhost:3007/api/auth/token | jq -r .token) \
+    go test ./internal/auth/ -run TestVerifyAgainstLiveIssuer -v
+
+That test skips unless both variables are set.
+
+## Rules for backend code
+
+Layout and responsibilities are spelled out in AGENT.md's "Folder Philosophy";
+the rules that matter most when writing code:
+
+- Business logic lives in `internal/` packages, never inside HTTP handlers.
+  `cmd/switchyard` does wiring and startup only.
+- Dependency direction is one-way:
+  `api → auth, workflow, execution`; `execution → ai, github, slack, database,
+  websocket`; everything → `database, config`. Domain packages never import
+  `api`. The engine never imports HTTP. **A cycle means a boundary was drawn
+  wrong.**
+- Every package carries a `doc.go` stating its responsibility. If that takes
+  more than two sentences, the package is doing too much.
+- The transport package is `api`, never `http`, so it cannot shadow `net/http`.
+- `config` is the only package that reads env vars directly.
+- `pkg/` stays empty until something genuinely general-purpose earns a place.
+- A workflow is **data**; it does not run anything. Running belongs to
+  `execution`. The engine is designed independently of the UI: the frontend
+  visualizes, the backend executes.
+- Services from the map above land in the `internal/` package that already
+  claims them — integrations in `github`/`slack`, notifications in `websocket`,
+  logs in `execution`. Only credential handling has no home yet; give it its own
+  package when it is built, rather than smearing key material across others.
+
+## Commands
+
+Postgres, from the repo root:
+
+    docker compose up -d      # switchyard-postgres on 127.0.0.1:5434
+    docker compose down       # add -v to drop the volume and reseed on next up
+
+Port 5434, not 5432 — other projects on this machine hold the lower ports.
+`backend/migrations/` is mounted as the image's init directory, so the schema
+seeds automatically on the **first** boot of an empty volume. Changing a
+migration after that requires `down -v` or applying it by hand.
+
+Backend (`backend/`, Go 1.26, module `github.com/R7rainz/switchyard/backend`):
+
+    go run ./cmd/switchyard     # :8080, override with SWITCHYARD_ADDR
+    go build ./...
+    go test ./...
+    go vet ./...
+
+Frontend (`frontend/`, **pnpm only** — never npm or yarn; pinned via the
+`packageManager` field in `package.json`, which corepack enforces):
+
+    pnpm dev
+    pnpm build            # needs DATABASE_URL set: auth.ts fails fast without it
+    pnpm lint
+    pnpm gen:schema       # print Better Auth SQL; needs a reachable database
+    pnpm verify:auth      # sign up -> mint JWT -> verify against JWKS
+
+Copy `frontend/.env.example` to `.env` before running any of them.
+
+`frontend/pnpm-workspace.yaml` gates dependency build scripts; a new dep whose
+postinstall must run needs an `allowBuilds` entry.
+
+## MVP scope
+
+Auth (Better Auth signup/login, JWT verified in Go), dashboard CRUD over workflows, drag-and-drop
+builder, AI workflow generation, execution with status/logs/timing, live log
+streaming over WebSocket. Node types: triggers, logic, AI, HTTP, GitHub,
+communication, variables.
+
+**Not in v1:** microservices, Kubernetes, marketplace, billing, teams, RBAC,
+plugins, mobile, 100+ integrations. Future node types (Docker, SSH, Kubernetes,
+Kafka, Terraform, …) must not influence MVP architecture.
