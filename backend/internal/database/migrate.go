@@ -162,8 +162,8 @@ func loadMigrations(files fs.FS) ([]Migration, error) {
 func versionOf(name string) (int64, error) {
 	base := path.Base(name)
 	digits := base
-	if cut := strings.IndexByte(base, '_'); cut >= 0 {
-		digits = base[:cut]
+	if before, _, found := strings.Cut(base, "_"); found {
+		digits = before
 	} else {
 		digits = strings.TrimSuffix(base, ".sql")
 	}
