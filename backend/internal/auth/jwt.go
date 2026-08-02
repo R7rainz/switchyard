@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -296,10 +297,8 @@ func matchAudience(raw json.RawMessage, want string) error {
 	if err := json.Unmarshal(raw, &many); err != nil {
 		return errors.New("auth: audience is neither a string nor an array of strings")
 	}
-	for _, audience := range many {
-		if audience == want {
-			return nil
-		}
+	if slices.Contains(many, want) {
+		return nil
 	}
 	return fmt.Errorf("auth: audience %v does not include %q", many, want)
 }
