@@ -14,6 +14,7 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/api"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/config"
+	"github.com/R7rainz/switchyard/backend/internal/credential"
 )
 
 func main() {
@@ -30,6 +31,13 @@ func main() {
 
 	verifier := auth.NewVerifier(cfg.AuthJWKSURL(), cfg.AuthIssuer, cfg.AuthAudience)
 
+	// Nothing can be wired to the credential service until there is a store for
+	// it, but the master keys are checked here anyway: a key AES will not take
+	// should stop the process now, not the first time someone saves a token.
+	if _, err := credential.NewKeyring(cfg.CredentialKeyVersion, cfg.CredentialKeys); err != nil {
+		logger.Fatal().Err(err).Msg("credential keys unusable")
+	}
+
 	server := &http.Server{
 		Addr:    cfg.Addr,
 		Handler: api.NewRouter(verifier, logger),
@@ -45,6 +53,7 @@ func main() {
 		Str("issuer", cfg.AuthIssuer).
 		Str("audience", cfg.AuthAudience).
 		Bool("development", cfg.Development).
+		Int("credential_key_version", cfg.CredentialKeyVersion).
 		Msg("starting switchyard")
 
 	if err := server.ListenAndServe(); err != nil {
