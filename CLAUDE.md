@@ -340,10 +340,15 @@ an init directory. That mount only ran on an empty volume, so a migration added
 later never reached an existing database — which is how `0002_credentials` came
 to be missing from the dev database while its file sat in the repo.
 
-An existing database seeded by the old mount has the tables but no
-`schema_migrations`, so the runner will try to re-apply `0001` and stop with
-`relation "user" already exists`. It fails cleanly and changes nothing. Either
-`docker compose down -v`, or record what is already there once:
+**The local dev database has already been fixed this way** — it was baselined
+at 0001 and 0003, the server then applied the missing `0002_credentials`, and
+its six users were kept. The rest of this note is for any other database seeded
+by the old mount.
+
+Such a database has the tables but no `schema_migrations`, so the runner tries
+to re-apply `0001` and stops with `relation "user" already exists`. It fails
+cleanly and changes nothing. Either `docker compose down -v`, or record what is
+already there once:
 
     create table if not exists "schema_migrations" (
       "version" bigint primary key, "name" text not null,
@@ -355,6 +360,24 @@ An existing database seeded by the old mount has the tables but no
 The next start then applies only what is genuinely missing.
 
 Backend (`backend/`, Go 1.26, module `github.com/R7rainz/switchyard/backend`):
+
+`config.Load` reads `backend/.env` if it is there, so `go run` works in a bare
+shell. **A variable already set in the environment always wins**, so
+`DATABASE_URL=... go run ./cmd/switchyard` means what it says. `.env` and
+`.env.example` are both gitignored, so a fresh clone has neither — these are
+the variables to put in one:
+
+    DATABASE_URL                # same database the frontend uses, port 5434
+    SWITCHYARD_CREDENTIAL_KEY   # 1:$(openssl rand -base64 32), newest first
+    SWITCHYARD_AUTH_ISSUER      # must equal the frontend's BETTER_AUTH_URL
+    SWITCHYARD_AUTH_AUDIENCE    # switchyard-backend
+    SWITCHYARD_ADDR             # :8080
+    SWITCHYARD_ENV              # development | production
+    SWITCHYARD_LOG_LEVEL        # trace|debug|info|warn|error|fatal|panic
+
+`DATABASE_URL` and `SWITCHYARD_CREDENTIAL_KEY` are required; the server refuses
+to start without them.
+
 
     go run ./cmd/switchyard     # :8080, override with SWITCHYARD_ADDR
     go build ./...

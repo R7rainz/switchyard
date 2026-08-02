@@ -61,6 +61,13 @@ func (c Config) AuthJWKSURL() string {
 // that would leave the server misconfigured is an error rather than a silent
 // fallback.
 func Load() (Config, error) {
+	// A .env beside the binary fills gaps for local development and never
+	// overrides a variable that is already set. Absent in production, where the
+	// environment comes from whatever runs the process.
+	if err := loadDotEnv(dotEnvFile); err != nil {
+		return Config{}, fmt.Errorf("config: reading %s: %w", dotEnvFile, err)
+	}
+
 	cfg := Config{
 		Addr:         envOr("SWITCHYARD_ADDR", ":8080"),
 		AuthIssuer:   envOr("SWITCHYARD_AUTH_ISSUER", "http://localhost:3007"),
