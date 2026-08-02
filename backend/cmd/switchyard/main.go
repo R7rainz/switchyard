@@ -4,22 +4,33 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
+	"time"
+
+	"github.com/R7rainz/switchyard/backend/internal/api"
+	"github.com/R7rainz/switchyard/backend/internal/auth"
+	"github.com/R7rainz/switchyard/backend/internal/config"
 )
 
 func main() {
-	addr := os.Getenv("SWITCHYARD_ADDR")
-	if addr == "" {
-		addr = ":8080"
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("ok"))
-	})
+	verifier := auth.NewVerifier(cfg.AuthJWKSURL(), cfg.AuthIssuer, cfg.AuthAudience)
 
-	log.Printf("switchyard listening on %s", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	server := &http.Server{
+		Addr:    cfg.Addr,
+		Handler: api.NewRouter(verifier),
+		// Bound how long a connection can sit half-open holding a slot.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+	}
+
+	log.Printf("switchyard listening on %s, trusting tokens from %s", cfg.Addr, cfg.AuthIssuer)
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
