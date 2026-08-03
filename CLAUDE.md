@@ -456,6 +456,78 @@ be minted per request, and doing that by hand at each call site is one forgotten
 the backend's `{"error": ...}` out of a failure, since axios's own `err.message`
 would replace "duplicate node id" with "Request failed with status code 400".
 
+### Executions
+
+**`internal/execution` is the engine.** It walks a graph, runs each node,
+records what happened, and knows nothing about HTTP. `0006` adds `execution`
+and `execution_node`.
+
+**Starting is asynchronous.** A workflow calls external services and can take
+minutes, so `POST .../executions` answers **202** with an id and the caller
+watches it. The run gets `context.WithoutCancel` — the request's context dies
+when the response is written, and using it would kill every run the instant it
+was accepted — plus a `runTimeout` of its own.
+
+**The graph is copied onto the execution row.** That snapshot is what makes a
+finished run mean something: editing the workflow afterwards cannot change what
+this run appears to have done. **It is also why there is no `workflow_version`
+table** — the snapshot answers the question versioning would have been asked.
+
+**`Runnable` is checked at `Start`, not at save.** This is where the draft/run
+split from `workflow` pays off: a half-built canvas saves all day, and starting
+it is the moment it has to be a real workflow.
+
+Nodes run **one at a time**, in `topological` order seeded in graph order rather
+than map order — deterministic execution is the promise, and a map range would
+quietly break it. Parallel branches are an optimisation to make when something
+is visibly waiting on it.
+
+**Branching is `sourceHandle`.** After a node runs, an edge is followed when its
+handle is empty (the default output) or matches the `Branch` the node returned.
+A node nothing activates is recorded **SKIPPED**, which is a real outcome: an
+untaken branch has to look different from a step still pending.
+
+**Variables are `text/template` over the node's `data`**, with
+`.nodes.<id>.<field>` and `.trigger.<field>`. Stdlib rather than an expression
+language of our own — one less parser to write, document, and get wrong.
+`missingkey=error` is set on purpose: a workflow that silently posts `""` where
+a PR number belongs is worse than one that stops and says which reference was
+wrong. A value that may contain quotes needs `{{ json . }}`, or the substitution
+breaks the surrounding JSON and is rejected with a message saying so.
+
+**A failed node keeps its output.** An HTTP node rejected with a 401 still holds
+the body explaining why, and that is the whole reason anyone opens a failed run.
+`dispatch` returns the result *alongside* the error; dropping it there was a real
+bug, caught live rather than by a test, and `TestFailedNodeKeepsItsOutput` now
+pins it.
+
+**Runners live with their integration.** `Registry` maps a node type to a
+`Runner`; GitHub nodes belong in `internal/github` and so on. `Builtin` holds
+only the ones needing nothing but stdlib — triggers, `logic.condition`, and
+`http.request` — because a package containing one function is ceremony, not a
+boundary. **An unregistered node type fails its run** with a message naming the
+type; silently doing nothing is the one outcome an engine must never have.
+
+**`Reclaim` runs at startup, before the server listens.** A process that dies
+mid-run leaves rows nothing will ever finish, and a run stuck at RUNNING reads
+as "the engine is wedged" rather than "this never completed". `Finish` will not
+overwrite a status that is already terminal, so a node completing just as a
+cancel lands cannot turn CANCELLED into SUCCEEDED — both stores are tested on
+that.
+
+**Cancel only reaches runs in this process.** That is honest rather than
+limiting: one binary is the whole deployment. A cancel for a run this process
+has never heard of finishes the row instead.
+
+Routes: `POST .../workflows/{workflowID}/executions` and
+`POST .../executions/{id}/cancel` need `execution:run` (MEMBER); listing and
+reading need `execution:read` (VIEWER) — a viewer may watch what happened, and
+it takes a member to make something happen.
+
+**`execution` imports `workflow`.** That arrow is not in AGENT.md's list and is
+correct: a workflow is data and the engine consumes it. `workflow` imports
+nothing back, so there is no cycle.
+
 ## Commands
 
 Postgres, from the repo root:
