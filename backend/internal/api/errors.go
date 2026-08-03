@@ -9,6 +9,7 @@ import (
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
 
@@ -45,10 +46,22 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, auth.ErrNoIdentity):
 		unauthorized(w, "invalid token")
 
+	case errors.Is(err, workflow.ErrInvalid), errors.Is(err, workflow.ErrNotRunnable):
+		// The caller wrote the graph, so the reason is theirs to know: "edge
+		// 'e1' ends at unknown node 'ghost'" is something they can act on, and
+		// it describes only what they just sent.
+		//
+		// ErrNotRunnable cannot come from a save — a draft that cannot run is
+		// still stored. It is here for the execution routes, which reject a
+		// run rather than a save, and for the same reason: the graph is the
+		// caller's and so is the fix.
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+
 	case errors.Is(err, auth.ErrNotOwner),
 		errors.Is(err, workspace.ErrNotMember),
 		errors.Is(err, workspace.ErrNotFound),
-		errors.Is(err, credential.ErrNotFound):
+		errors.Is(err, credential.ErrNotFound),
+		errors.Is(err, workflow.ErrNotFound):
 		// 404, not 403. A 403 would confirm the resource exists, which lets
 		// anyone with an account probe for other users' workflow or workspace
 		// ids. Someone else's resource and a resource that was never there

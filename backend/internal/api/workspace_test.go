@@ -25,7 +25,7 @@ const testAppURL = "http://localhost:3007"
 // meets the same middleware chain it would in the server.
 func testRouter(verifier TokenVerifier, logger zerolog.Logger) http.Handler {
 	store := workspace.NewMemoryStore()
-	return NewRouter(verifier, logger, workspace.NewService(store), nil, testAppURL)
+	return NewRouter(verifier, logger, workspace.NewService(store), nil, nil, testAppURL)
 }
 
 // mount builds a router with one gated route, backed by a real workspace
@@ -196,7 +196,7 @@ func (tokenNamesTheCaller) Verify(_ context.Context, token string) (*auth.Claims
 // routes builds the whole API over an empty in-memory store.
 func routes() http.Handler {
 	store := workspace.NewMemoryStore()
-	return NewRouter(tokenNamesTheCaller{}, testLogger(), workspace.NewService(store), nil, testAppURL)
+	return NewRouter(tokenNamesTheCaller{}, testLogger(), workspace.NewService(store), nil, nil, testAppURL)
 }
 
 // call issues an authenticated request as userID and decodes the response.
@@ -442,7 +442,7 @@ func TestInviteTokenStaysOutOfTheLog(t *testing.T) {
 
 	store := workspace.NewMemoryStore()
 	api := NewRouter(tokenNamesTheCaller{}, captureLogs(&buf, zerolog.InfoLevel),
-		workspace.NewService(store), nil, testAppURL)
+		workspace.NewService(store), nil, nil, testAppURL)
 
 	workspaceID := firstWorkspace(t, api, "alice")
 	_, created := call(t, api, http.MethodPost, "/api/workspaces/"+workspaceID+"/invites", "alice", `{"role":"MEMBER"}`)
