@@ -53,6 +53,7 @@ func NewRouter(
 	router.Get("/healthz", handleHealthz)
 
 	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
+	creds := &credentialAPI{credentials: credentials}
 
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
@@ -76,6 +77,15 @@ func NewRouter(
 			r.With(manage).Post("/invites", ws.createInvite)
 			r.With(manage).Get("/invites", ws.listInvites)
 			r.With(manage).Delete("/invites/{inviteID}", ws.revokeInvite)
+
+			// Credentials sit at ADMIN even to list. A member runs workflows
+			// that use the keys; which keys exist is a different question, and
+			// the listing alone tells you which providers a workspace is
+			// wired to.
+			keys := RequirePermission(workspaces, auth.PermissionCredentialManage)
+			r.With(keys).Get("/credentials", creds.listCredentials)
+			r.With(keys).Put("/credentials/{provider}/{name}", creds.putCredential)
+			r.With(keys).Delete("/credentials/{provider}/{name}", creds.deleteCredential)
 		})
 
 		// Accepting cannot be workspace-scoped: the caller holds no membership

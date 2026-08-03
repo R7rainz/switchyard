@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
+	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
 
@@ -46,7 +47,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 
 	case errors.Is(err, auth.ErrNotOwner),
 		errors.Is(err, workspace.ErrNotMember),
-		errors.Is(err, workspace.ErrNotFound):
+		errors.Is(err, workspace.ErrNotFound),
+		errors.Is(err, credential.ErrNotFound):
 		// 404, not 403. A 403 would confirm the resource exists, which lets
 		// anyone with an account probe for other users' workflow or workspace
 		// ids. Someone else's resource and a resource that was never there
