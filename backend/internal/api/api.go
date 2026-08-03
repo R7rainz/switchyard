@@ -14,6 +14,7 @@ import (
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/execution"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
@@ -36,6 +37,7 @@ func NewRouter(
 	workspaces *workspace.Service,
 	credentials *credential.Service,
 	workflows *workflow.Service,
+	executions *execution.Service,
 	appURL string,
 ) http.Handler {
 	router := chi.NewRouter()
@@ -56,6 +58,7 @@ func NewRouter(
 	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
 	creds := &credentialAPI{credentials: credentials}
 	flows := &workflowAPI{workflows: workflows}
+	runs := &executionAPI{executions: executions}
 
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
@@ -101,6 +104,18 @@ func NewRouter(
 			r.With(readFlows).Get("/workflows/{workflowID}", flows.getWorkflow)
 			r.With(writeFlows).Patch("/workflows/{workflowID}", flows.updateWorkflow)
 			r.With(dropFlows).Delete("/workflows/{workflowID}", flows.deleteWorkflow)
+
+			// Running is a separate permission from editing: a VIEWER may watch
+			// what happened, and it takes a MEMBER to make something happen.
+			// Cancelling sits with running rather than reading, since stopping
+			// a run is an action on it.
+			readRuns := RequirePermission(workspaces, auth.PermissionExecutionRead)
+			runRuns := RequirePermission(workspaces, auth.PermissionExecutionRun)
+
+			r.With(runRuns).Post("/workflows/{workflowID}/executions", runs.startExecution)
+			r.With(readRuns).Get("/executions", runs.listExecutions)
+			r.With(readRuns).Get("/executions/{executionID}", runs.getExecution)
+			r.With(runRuns).Post("/executions/{executionID}/cancel", runs.cancelExecution)
 		})
 
 		// Accepting cannot be workspace-scoped: the caller holds no membership
