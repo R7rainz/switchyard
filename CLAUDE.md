@@ -91,6 +91,7 @@ templates.
 | UI Components   | shadcn/ui             | Accessible, customizable component library                                  |
 | Icons           | Lucide React          | Consistent icon set                                                         |
 | Workflow Canvas | React Flow            | Visual node-based workflow editor                                           |
+| HTTP Client     | **axios**             | One instance in `lib/api.ts`; an interceptor mints the JWT per request      |
 | Server State    | **TanStack Query**    | API fetching, caching, mutations, optimistic updates, background refetching |
 | Client State    | Zustand               | UI state like selected node, sidebar, canvas preferences, dialogs           |
 | Forms           | React Hook Form + Zod | Performant forms with schema validation                                     |
@@ -373,26 +374,47 @@ Nothing ever reads a single node: the builder sends the whole graph, the engine
 walks the whole graph, a diff compares whole graphs. Splitting it would cost a
 join and N inserts per autosave and buy back a query nobody makes.
 
-**`Graph.Validate` in `graph.go` is the point of the package**, and everything
-downstream is allowed to assume it passed:
+**The graph uses React Flow's field names**, on purpose: `source`/`target`/
+`sourceHandle` on an edge, `data` on a node. The frontend holds exactly this
+shape in `useNodesState`/`useEdgesState`, so a save is the array the canvas
+already has. There is no mapping layer, and there should not be — a translation
+is somewhere for the two representations to drift apart. A live round trip is
+byte-identical.
 
-    unique non-empty node and edge ids       every edge endpoint is a real node
-    a known node-type category               exactly one trigger, nothing into it
-    no cycles                                every node reachable from the trigger
+**Validation is split in two, and the split is the important part.**
+
+    Graph.Validate()   save time   the document is intact
+    Graph.Runnable()   run time    the graph can actually execute
+
+`Validate` checks unique non-empty ids, that every edge endpoint is a real node,
+size caps, and that `data` is valid JSON. That is all. **It does not ask whether
+the workflow could run**, because a builder canvas is half-finished by
+definition: a node dropped but not yet wired, no trigger yet, two triggers
+mid-edit. Autosave fires constantly during that, and rejecting it would mean
+saves failing while somebody is mid-thought. **A save is a draft.**
+
+`Runnable` is the set of guarantees the engine may assume — exactly one trigger,
+nothing pointing into it, no cycles, every node reachable, a known node-type
+category. The execution service calls it; saving never does. A graph that fails
+it is a perfectly good draft.
+
+This was originally one save-time gate, and it was wrong: `TestBuilderDraftsSave`
+is the test that would have caught it.
 
 **Only the category is checked, not the action** — `http.` is known,
 `http.request` is not verified. Whether an action exists is the node registry's
-question and the registry ships with the engine; guessing the list here would
-mean stored graphs disagreeing with it later, which is a migration rather than a
-validation. `categories` is the one place to add a family.
+question and the registry ships with the engine. That check sits in `Runnable`
+so the frontend can ship a node type before Go learns about it, costing a failed
+run rather than a failed save. `categories` is the one place to add a family.
 
 **Cycles are rejected** so the engine can be a topological walk rather than a
 loop detector carrying a step budget. Looping, if it is ever wanted, is an
 explicit node type with a visible bound.
 
-`Node.Config` is `json.RawMessage` and is only checked for being well-formed
-JSON. This package does not know what an AI node needs, and keeping it opaque
-means an unrecognised field survives a save/load round trip.
+`Node.Data` is `json.RawMessage` — the label the canvas draws plus whatever the
+node type needs — and is only checked for being well-formed JSON. This package
+does not know what an AI node requires, and keeping it opaque means an
+unrecognised field survives a save/load round trip.
 
 **No `workflow_version` table, deliberately.** Determinism is what would demand
 one, and pinning the graph on the execution row satisfies that completely —
@@ -417,12 +439,22 @@ the way the workspace slug rule once did.
 
 Routes sit under `/workspaces/{workspaceID}/workflows`, gated on
 `workflow:read` (VIEWER), `workflow:write`, and `workflow:delete` (MEMBER).
-`writeError` maps `workflow.ErrInvalid` to **400 carrying the reason** — the
-caller wrote the graph, so "node 'x' cannot be reached from the trigger" is
-theirs to know and describes only what they just sent.
+`writeError` maps `workflow.ErrInvalid` and `ErrNotRunnable` to **400 carrying
+the reason** — the caller wrote the graph, so `edge "e1" ends at unknown node
+"ghost"` is theirs to know and describes only what they just sent. That is the
+opposite of the auth failures, where the reason goes to the log and never the
+response.
 
 Graph bodies use `decodeJSONLimit` at 1 MiB; the default 64 KiB is for the
 endpoints that take a handful of short fields.
+
+`frontend/src/lib/api.ts` is the other half: one axios instance whose request
+interceptor calls `getToken()` and sets the bearer header. **That interceptor is
+why axios is there at all** — a Better Auth token lives 15 minutes, so it has to
+be minted per request, and doing that by hand at each call site is one forgotten
+`await` away from a 401 that looks like a permissions bug. `apiError(err)` pulls
+the backend's `{"error": ...}` out of a failure, since axios's own `err.message`
+would replace "duplicate node id" with "Request failed with status code 400".
 
 ## Commands
 
