@@ -74,8 +74,10 @@ func (a *executionAPI) startExecution(w http.ResponseWriter, r *http.Request) {
 		Input json.RawMessage `json:"input"`
 	}
 	// An empty body is the ordinary case — "run this now" carries nothing — so
-	// it is not an error, only an absent payload.
-	if r.ContentLength > 0 {
+	// it is not an error, only an absent payload. Compared against zero rather
+	// than tested for positive: a chunked request reports -1, and ">" would
+	// silently throw its payload away.
+	if r.ContentLength != 0 {
 		if err := decodeJSONLimit(r, &body, maxGraphBytes); err != nil {
 			writeError(w, r, err)
 			return

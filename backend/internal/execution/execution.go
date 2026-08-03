@@ -202,7 +202,7 @@ func (s *Service) Start(ctx context.Context, workspaceID, workflowID, userID, tr
 		return Execution{}, err
 	}
 
-	s.launch(run)
+	s.launch(ctx, run)
 	return run, nil
 }
 

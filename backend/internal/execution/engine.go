@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
+
+	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 )
@@ -44,17 +47,35 @@ func (l *liveRuns) cancel(id string) bool {
 	return ok
 }
 
-// errCancelled separates a deliberate cancel from a node that failed.
+// errCancelled separates a stopped run from a node that failed on its own.
 var errCancelled = errors.New("execution: cancelled")
+
+// runStopped reports whether the run's context has ended, and distinguishes the
+// two ways that happens.
+//
+// Both arrive as a dead context, and conflating them would tell somebody their
+// run was cancelled when nobody cancelled it — it simply took too long, which
+// is a completely different thing to go and fix.
+func runStopped(ctx context.Context, limit time.Duration) (Status, string, bool) {
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return StatusFailed, fmt.Sprintf("the run exceeded its %s limit", limit), true
+	case ctx.Err() != nil:
+		return StatusCancelled, "cancelled", true
+	}
+	return "", "", false
+}
 
 // launch starts the run in the background.
 //
-// The context is deliberately not the request's. That one is cancelled the
-// moment the response is written, which would kill every execution the instant
-// it was accepted. WithoutCancel keeps the values — the logger especially —
-// while dropping that deadline, and the run gets a bound of its own.
-func (s *Service) launch(run Execution) {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), s.runTimeout)
+// context.WithoutCancel is the whole trick here. The request's context is
+// cancelled the moment the response is written, so handing it to the goroutine
+// would kill every execution the instant it was accepted. WithoutCancel drops
+// that cancellation while keeping the values — the request's logger, so a run's
+// lines can still be tied back to the call that started it — and the run then
+// gets a deadline of its own.
+func (s *Service) launch(parent context.Context, run Execution) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), s.runTimeout)
 	s.live.add(run.ID, cancel)
 
 	go func() {
@@ -68,18 +89,47 @@ func (s *Service) launch(run Execution) {
 // there is nobody left to return one to, so every outcome is written to the
 // execution row instead.
 func (s *Service) run(ctx context.Context, run Execution) {
+	logger := zerolog.Ctx(ctx).With().Str("execution_id", run.ID).Logger()
+
+	// A runner is somebody else's code, and an unrecovered panic in a goroutine
+	// takes the whole process with it — chi's Recoverer only wraps handlers,
+	// never anything they start. One badly written node must fail one run.
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logger.Error().
+				Interface("panic", recovered).
+				Bytes("stack", debug.Stack()).
+				Msg("execution panicked")
+			s.finish(ctx, run.ID, StatusFailed, fmt.Sprintf("the engine panicked: %v", recovered))
+		}
+	}()
+
 	if err := s.store.Start(ctx, run.ID, s.now()); err != nil {
 		// Nothing can be recorded if the store is unreachable, and Reclaim will
 		// catch the row on the next restart.
+		logger.Error().Err(err).Msg("could not start execution")
 		return
 	}
 
 	status, message := s.walk(ctx, run)
-	// The run's own context may already be cancelled, and the outcome still has
-	// to be written — that is the one write that must not be skipped.
-	finish, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	s.finish(ctx, run.ID, status, message)
+
+	event := logger.Info()
+	if status != StatusSucceeded {
+		event = logger.Warn()
+	}
+	event.Str("status", string(status)).Str("reason", message).Msg("execution finished")
+}
+
+// finish writes the outcome on a context of its own.
+//
+// The run's context may already be cancelled or timed out — that is often
+// exactly why we are here — and this is the one write that must not be skipped,
+// or the row stays RUNNING until the next restart reclaims it.
+func (s *Service) finish(ctx context.Context, id string, status Status, message string) {
+	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	_ = s.store.Finish(finish, run.ID, status, message, s.now())
+	_ = s.store.Finish(write, id, status, message, s.now())
 }
 
 // walk runs the nodes in dependency order and returns the run's outcome.
@@ -110,6 +160,14 @@ func (s *Service) walk(ctx context.Context, run Execution) (Status, string) {
 	active := map[string]bool{triggerOf(graph): true}
 
 	for _, id := range order {
+		// Checked between nodes, not only inside them. A runner that finishes
+		// quickly never notices its context, so without this a cancel would be
+		// ignored by any graph of fast nodes — the engine has to be the one
+		// that stops, rather than trusting every runner to.
+		if status, message, stopped := runStopped(ctx, s.runTimeout); stopped {
+			return status, message
+		}
+
 		node := nodes[id]
 
 		if !active[id] {
@@ -122,7 +180,8 @@ func (s *Service) walk(ctx context.Context, run Execution) (Status, string) {
 		result, err := s.runNode(ctx, run, node, outputs)
 		switch {
 		case errors.Is(err, errCancelled):
-			return StatusCancelled, "cancelled"
+			status, message, _ := runStopped(ctx, s.runTimeout)
+			return status, message
 		case err != nil:
 			// One failed node fails the run. Continue-on-error belongs to the
 			// node's own configuration, and no node has asked for it yet.

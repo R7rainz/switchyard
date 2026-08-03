@@ -422,6 +422,110 @@ func TestCancelStopsARunningExecution(t *testing.T) {
 	}
 }
 
+// A runner is somebody else's code. An unrecovered panic in a goroutine takes
+// the whole process with it — chi's Recoverer only wraps handlers, never what
+// they start — so the engine has to catch its own.
+func TestPanickingRunnerFailsOnlyItsRun(t *testing.T) {
+	graph := workflow.Graph{
+		Nodes: []workflow.Node{node("t", "trigger.manual", ""), node("boom", "http.request", "")},
+		Edges: []workflow.Edge{edge("e1", "t", "boom")},
+	}
+	svc, store, _ := harness(t, graph)
+	svc.runners.Register("http.request", RunnerFunc(func(context.Context, Input) (Result, error) {
+		panic("a badly written node")
+	}))
+
+	run, err := svc.Start(context.Background(), wsA, "wf-1", user, "", nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	finished := await(t, store, wsA, run.ID)
+
+	if finished.Status != StatusFailed {
+		t.Fatalf("status = %s, want FAILED", finished.Status)
+	}
+	if !strings.Contains(finished.Error, "panicked") {
+		t.Fatalf("error = %q, want it to say the engine panicked", finished.Error)
+	}
+
+	// And the process is still here to run the next one.
+	second, err := svc.Start(context.Background(), wsA, "wf-1", user, "", nil)
+	if err != nil {
+		t.Fatalf("the service did not survive: %v", err)
+	}
+	await(t, store, wsA, second.ID)
+}
+
+// A cancel must be honoured between nodes, not only inside them. Runners that
+// return immediately never look at their context, so if the engine did not
+// check, a graph of fast nodes would run to completion after being cancelled.
+func TestCancelIsHonouredBetweenFastNodes(t *testing.T) {
+	graph := workflow.Graph{
+		Nodes: []workflow.Node{
+			node("t", "trigger.manual", ""),
+			node("a", "http.request", ""),
+			node("b", "slack.message", ""),
+		},
+		Edges: []workflow.Edge{edge("e1", "t", "a"), edge("e2", "a", "b")},
+	}
+	svc, store, rec := harness(t, graph)
+
+	// Every runner ignores its context entirely, which is the realistic case
+	// for anything that finishes in microseconds.
+	stop := make(chan struct{})
+	svc.runners.Register("http.request", RunnerFunc(func(context.Context, Input) (Result, error) {
+		<-stop // hold here only so the cancel has a moment to land
+		return Result{Output: json.RawMessage(`{}`)}, nil
+	}))
+
+	run, _ := svc.Start(context.Background(), wsA, "wf-1", user, "", nil)
+	for len(rec.order()) < 1 {
+		time.Sleep(time.Millisecond)
+	}
+
+	if err := svc.Cancel(context.Background(), wsA, run.ID); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	close(stop)
+
+	finished := await(t, store, wsA, run.ID)
+	if finished.Status != StatusCancelled {
+		t.Fatalf("status = %s, want CANCELLED", finished.Status)
+	}
+	// Node b comes after the cancel and must never have been reached.
+	rows, _ := store.NodeRuns(context.Background(), run.ID)
+	for _, row := range rows {
+		if row.NodeID == "b" && row.Status != StatusSkipped {
+			t.Fatalf("node b ran after the cancel: %s", row.Status)
+		}
+	}
+}
+
+// A run that outlives its limit failed; it was not cancelled. Saying otherwise
+// sends somebody looking for the person who stopped it.
+func TestRunTimeoutIsFailedNotCancelled(t *testing.T) {
+	graph := workflow.Graph{
+		Nodes: []workflow.Node{node("t", "trigger.manual", ""), node("slow", "http.request", "")},
+		Edges: []workflow.Edge{edge("e1", "t", "slow")},
+	}
+	svc, store, _ := harness(t, graph)
+	svc.runTimeout = 50 * time.Millisecond
+	svc.runners.Register("http.request", RunnerFunc(func(ctx context.Context, _ Input) (Result, error) {
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}))
+
+	run, _ := svc.Start(context.Background(), wsA, "wf-1", user, "", nil)
+	finished := await(t, store, wsA, run.ID)
+
+	if finished.Status != StatusFailed {
+		t.Fatalf("status = %s, want FAILED", finished.Status)
+	}
+	if !strings.Contains(finished.Error, "exceeded") {
+		t.Fatalf("error = %q, want it to name the limit", finished.Error)
+	}
+}
+
 // A run in one workspace is invisible from another, the same rule as everywhere
 // else and for the same reason.
 func TestExecutionIsWorkspaceScoped(t *testing.T) {
