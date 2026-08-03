@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
@@ -25,12 +26,27 @@ func NewPostgresStore(pool *pgxpool.Pool) *PostgresStore {
 	return &PostgresStore{pool: pool}
 }
 
+// uniqueViolation is Postgres' SQLSTATE for a duplicate key. Spelled out here
+// rather than pulling in pgerrcode for one constant.
+const uniqueViolation = "23505"
+
 func (s *PostgresStore) CreateWorkspace(ctx context.Context, w Workspace) error {
 	_, err := s.pool.Exec(ctx,
 		`insert into "workspace" ("id", "name", "slug", "createdAt", "updatedAt")
 		 values ($1, $2, $3, $4, $4)`,
 		w.ID, w.Name, w.Slug, w.CreatedAt)
 	if err != nil {
+		// Translating the driver's error here is the store's job: leaving it
+		// raw makes a duplicate slug — which the caller chose and can fix —
+		// indistinguishable from the database being on fire, and the API layer
+		// answers both with a 500.
+		//
+		// The slug is the only unique column a caller supplies; ids are random,
+		// so a primary key collision is not something a user can provoke.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+			return ErrSlugTaken
+		}
 		return fmt.Errorf("workspace: creating: %w", err)
 	}
 	return nil

@@ -69,6 +69,12 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		// saying why it stopped working saves a support round trip.
 		writeJSON(w, http.StatusGone, map[string]any{"error": err.Error()})
 
+	case errors.Is(err, workspace.ErrSlugTaken):
+		// 409 rather than 400: the request was well formed and the caller can
+		// retry with a different slug. Nothing here reveals whose workspace
+		// holds it, only that the name is gone.
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "slug is already taken"})
+
 	case errors.Is(err, workspace.ErrLastOwner):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a workspace must keep an owner"})
 

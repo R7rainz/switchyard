@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -102,11 +103,25 @@ func (a *workspaceAPI) listWorkspaces(w http.ResponseWriter, r *http.Request) {
 
 	if len(found) == 0 {
 		created, err := a.workspaces.Create(r.Context(), claims.Subject, personalName(claims), personalSlug(claims.Subject))
-		if err != nil {
+		switch {
+		case err == nil:
+			found = []workspace.Workspace{created}
+
+		case errors.Is(err, workspace.ErrSlugTaken):
+			// Two of this user's requests raced and the other one won. The
+			// personal slug is derived from the user id, so the workspace now
+			// holding it is theirs — list again rather than reporting a
+			// conflict for something they did not ask for and cannot fix.
+			found, err = a.workspaces.List(r.Context(), claims.Subject)
+			if err != nil {
+				writeError(w, r, err)
+				return
+			}
+
+		default:
 			writeError(w, r, err)
 			return
 		}
-		found = []workspace.Workspace{created}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"workspaces": workspacesJSON(found)})

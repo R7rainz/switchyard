@@ -388,3 +388,55 @@ func TestPostgresRejectsAnUnknownRole(t *testing.T) {
 		t.Error("the database accepted a role that is not one of the four")
 	}
 }
+
+func TestPostgresDuplicateSlugIsErrSlugTaken(t *testing.T) {
+	// The whole reason this bug existed: the unique constraint lives in
+	// Postgres, so only Postgres can prove the driver error is translated. A
+	// memory-only test would have passed while production returned a 500.
+	store, pool := postgresStore(t)
+	insertUser(t, pool, "owner-1")
+	insertUser(t, pool, "owner-2")
+	ctx := context.Background()
+	service := serviceOn(store)
+
+	if _, err := service.Create(ctx, "owner-1", "Switchyard", "switchyard"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Same user, same slug.
+	if _, err := service.Create(ctx, "owner-1", "Again", "switchyard"); !errors.Is(err, ErrSlugTaken) {
+		t.Errorf("err = %v, want ErrSlugTaken", err)
+	}
+	// And a stranger, since slugs are global.
+	if _, err := service.Create(ctx, "owner-2", "Theirs", "switchyard"); !errors.Is(err, ErrSlugTaken) {
+		t.Errorf("err for another user = %v, want ErrSlugTaken", err)
+	}
+
+	// A different slug still works, so the translation is not swallowing
+	// everything.
+	if _, err := service.Create(ctx, "owner-2", "Other", "other"); err != nil {
+		t.Errorf("Create with a free slug: %v", err)
+	}
+}
+
+func TestPostgresAndMemoryAgreeOnDuplicateSlugs(t *testing.T) {
+	// The two stores must be interchangeable. This is the assertion that would
+	// have caught the original bug at the seam rather than in production.
+	store, pool := postgresStore(t)
+	insertUser(t, pool, "owner-1")
+	ctx := context.Background()
+
+	for name, svc := range map[string]*Service{
+		"postgres": serviceOn(store),
+		"memory":   NewService(NewMemoryStore()),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := svc.Create(ctx, "owner-1", "First", "same-slug"); err != nil {
+				t.Fatalf("first Create: %v", err)
+			}
+			if _, err := svc.Create(ctx, "owner-1", "Second", "same-slug"); !errors.Is(err, ErrSlugTaken) {
+				t.Errorf("err = %v, want ErrSlugTaken", err)
+			}
+		})
+	}
+}
