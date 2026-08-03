@@ -12,6 +12,7 @@
     "verify:auth": "node scripts/verify-auth.mjs"
   },
   "dependencies": {
+    "axios": "^1.19.0",
     "better-auth": "^1.6.25",
     "next": "16.2.12",
     "pg": "^8.22.0",
