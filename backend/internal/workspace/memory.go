@@ -31,6 +31,16 @@ func memberKey(workspaceID, userID string) string {
 func (m *MemoryStore) CreateWorkspace(_ context.Context, w Workspace) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// The schema makes slugs unique, so this has to as well. A memory store
+	// that accepted what Postgres rejects would let every test pass and every
+	// deployment fail.
+	for _, existing := range m.workspaces {
+		if existing.Slug == w.Slug {
+			return ErrSlugTaken
+		}
+	}
+
 	m.workspaces[w.ID] = w
 	return nil
 }

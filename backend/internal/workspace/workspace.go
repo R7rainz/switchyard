@@ -23,6 +23,11 @@ var (
 
 	// ErrLastOwner guards the invariant that a workspace always has an owner.
 	ErrLastOwner = errors.New("workspace: cannot remove the last owner")
+
+	// ErrSlugTaken means the slug belongs to another workspace. Slugs are
+	// globally unique because they are meant for URLs, so this is a collision
+	// with a stranger's workspace as often as with your own.
+	ErrSlugTaken = errors.New("workspace: slug is already taken")
 )
 
 // Workspace is the unit everything else belongs to: workflows, executions, and
