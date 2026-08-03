@@ -10,14 +10,15 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
 
-// smallGraph is the smallest thing workflow.Validate accepts: one trigger, one
-// step, one edge.
+// smallGraph is the shape React Flow holds in useNodesState and useEdgesState,
+// sent verbatim. If this ever needs rewriting to reach the API, the frontend
+// has a mapping layer it should not have.
 const smallGraph = `{
 	"nodes": [
-		{"id": "t", "type": "trigger.manual", "position": {"x": 0, "y": 0}},
-		{"id": "a", "type": "http.request", "position": {"x": 200, "y": 0}}
+		{"id": "t", "type": "trigger.manual", "position": {"x": 0, "y": 0}, "data": {"label": "Manually"}},
+		{"id": "a", "type": "http.request", "position": {"x": 200, "y": 0}, "data": {"label": "Call the API"}}
 	],
-	"edges": [{"id": "e1", "from": "t", "to": "a"}]
+	"edges": [{"id": "e1", "source": "t", "target": "a"}]
 }`
 
 // workflowRouter wires the real workflow service over in-memory storage, so
@@ -75,26 +76,21 @@ func TestWorkflowRoundTripThroughHTTP(t *testing.T) {
 	}
 }
 
-// A graph the caller can fix is a 400 carrying the reason, not a 500 and not a
-// bare "bad request".
-func TestInvalidGraphIsExplained(t *testing.T) {
+// A corrupt graph is a 400 carrying the reason, not a 500 and not a bare "bad
+// request".
+func TestCorruptGraphIsExplained(t *testing.T) {
 	router, _ := workflowRouter(t)
 	ws := firstWorkspace(t, router, "alice")
 	base := "/api/workspaces/" + ws + "/workflows"
 
 	cases := map[string]struct{ graph, mentions string }{
-		"no trigger": {
-			`{"nodes":[{"id":"a","type":"http.request"}],"edges":[]}`,
-			"trigger",
-		},
 		"dangling edge": {
-			`{"nodes":[{"id":"t","type":"trigger.manual"}],"edges":[{"id":"e1","from":"t","to":"ghost"}]}`,
+			`{"nodes":[{"id":"t","type":"trigger.manual"}],"edges":[{"id":"e1","source":"t","target":"ghost"}]}`,
 			"ghost",
 		},
-		"cycle": {
-			`{"nodes":[{"id":"t","type":"trigger.manual"},{"id":"a","type":"http.request"},{"id":"b","type":"http.request"}],
-			  "edges":[{"id":"e1","from":"t","to":"a"},{"id":"e2","from":"a","to":"b"},{"id":"e3","from":"b","to":"a"}]}`,
-			"cycle",
+		"duplicate node id": {
+			`{"nodes":[{"id":"t","type":"trigger.manual"},{"id":"t","type":"http.request"}],"edges":[]}`,
+			"duplicate node id",
 		},
 	}
 
@@ -107,6 +103,32 @@ func TestInvalidGraphIsExplained(t *testing.T) {
 			}
 			if message := field(t, body, "error"); !strings.Contains(message, tc.mentions) {
 				t.Fatalf("error %q does not mention %q", message, tc.mentions)
+			}
+		})
+	}
+}
+
+// The half-built states a React Flow canvas passes through all have to save,
+// because the builder autosaves and the user is not finished yet. This is the
+// test that would have caught the original design.
+func TestBuilderDraftsSave(t *testing.T) {
+	router, _ := workflowRouter(t)
+	ws := firstWorkspace(t, router, "alice")
+	base := "/api/workspaces/" + ws + "/workflows"
+
+	drafts := map[string]string{
+		"empty canvas":                             `{"nodes":[],"edges":[]}`,
+		"one node just dropped":                    `{"nodes":[{"id":"n1","type":"http.request","position":{"x":10,"y":10}}],"edges":[]}`,
+		"nodes not yet connected":                  `{"nodes":[{"id":"t","type":"trigger.manual"},{"id":"a","type":"slack.message"}],"edges":[]}`,
+		"a node type the backend has not heard of": `{"nodes":[{"id":"n1","type":"kubernetes.apply"}],"edges":[]}`,
+	}
+
+	for name, graph := range drafts {
+		t.Run(name, func(t *testing.T) {
+			status, body := call(t, router, http.MethodPost, base, "alice",
+				`{"name":"work in progress","graph":`+graph+`}`)
+			if status != http.StatusCreated {
+				t.Fatalf("a draft must save: status = %d, body %v", status, body)
 			}
 		})
 	}

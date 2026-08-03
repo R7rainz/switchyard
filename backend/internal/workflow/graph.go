@@ -7,38 +7,55 @@ import (
 	"strings"
 )
 
-// ErrInvalid is every way a workflow can be rejected for something the caller
-// wrote — a bad graph, a missing name, an oversize description. The wrapped
-// message says which one.
+// ErrInvalid means the document itself is broken: duplicate ids, an edge to a
+// node that does not exist, something oversize. A graph like this is refused on
+// the way in, because storing it would mean storing corruption.
 //
 // Unlike an authorization failure, the detail is safe to return: the caller
 // wrote the request, so being told what is wrong with it teaches them nothing
 // about anyone else and saves them guessing.
 var ErrInvalid = errors.New("workflow: invalid")
 
+// ErrNotRunnable means the graph is intact but cannot execute — no trigger, a
+// cycle, a node nothing reaches.
+//
+// This is deliberately not a save-time error. A builder canvas spends most of
+// its life in exactly this state: a node dropped but not yet wired, a trigger
+// about to be added. Rejecting the save would mean autosave failing while
+// somebody is halfway through a thought. The check belongs where running does.
+var ErrNotRunnable = errors.New("workflow: not runnable")
+
 func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
 
+func notRunnable(format string, args ...any) error {
+	return fmt.Errorf("%w: %s", ErrNotRunnable, fmt.Sprintf(format, args...))
+}
+
 // Graph is what the builder draws and the engine will walk: nodes and the
 // edges between them, and nothing about how either behaves.
+//
+// The field names are React Flow's, on purpose. The frontend holds exactly this
+// shape in useNodesState and useEdgesState, so a save is the array it already
+// has rather than a translation of it — and a translation layer is somewhere
+// for the two representations to drift apart.
 type Graph struct {
 	Nodes []Node `json:"nodes"`
 	Edges []Edge `json:"edges"`
 }
 
-// Node is one step. Config is deliberately opaque here — what a valid
-// configuration looks like depends on the node type, and only the engine knows
-// that. Keeping it as raw JSON means this package can validate the shape of a
-// workflow without pretending to know what an HTTP node or an AI node needs,
-// and an unrecognised field survives a save/load round trip instead of being
-// silently dropped.
+// Node is one step. Data is deliberately opaque here — it carries the label the
+// canvas draws and whatever configuration the node type needs, and only the
+// engine knows what a valid configuration looks like. Keeping it as raw JSON
+// means this package can check the shape of a workflow without pretending to
+// know what an HTTP node or an AI node requires, and an unrecognised field
+// survives a save and load instead of being silently dropped.
 type Node struct {
 	ID       string          `json:"id"`
 	Type     NodeType        `json:"type"`
-	Name     string          `json:"name,omitempty"`
 	Position Position        `json:"position"`
-	Config   json.RawMessage `json:"config,omitempty"`
+	Data     json.RawMessage `json:"data,omitempty"`
 }
 
 // Position is where the node sits on the canvas. It is presentation, carried
@@ -49,14 +66,14 @@ type Position struct {
 	Y float64 `json:"y"`
 }
 
-// Edge connects one node's output to another's input. Branch names which
+// Edge connects one node's output to another's input. SourceHandle names which
 // output it leaves from, so a condition node can have a "true" edge and a
-// "false" edge; an empty branch is the default single output.
+// "false" edge; an empty handle is the default single output.
 type Edge struct {
-	ID     string `json:"id"`
-	From   string `json:"from"`
-	To     string `json:"to"`
-	Branch string `json:"branch,omitempty"`
+	ID           string `json:"id"`
+	Source       string `json:"source"`
+	Target       string `json:"target"`
+	SourceHandle string `json:"sourceHandle,omitempty"`
 }
 
 // NodeType is "category.action" — "http.request", "logic.condition".
@@ -101,14 +118,15 @@ const (
 	maxIDLen = 128
 )
 
-// Validate is the gate every graph passes before it is stored, and the reason
-// this package exists. Everything downstream — the engine especially — is
-// allowed to assume these hold, so each rule here is a check the engine does
-// not have to repeat at every node.
+// Validate is the save-time gate, and it checks one thing: that the document is
+// intact. Ids are unique, edges point at nodes that exist, nothing is absurdly
+// large.
+//
+// It deliberately does not ask whether the graph could run. A canvas under
+// construction is half-finished by definition, and a save is a draft rather
+// than a promise to execute — Runnable is the check with an opinion about that,
+// and the execution service calls it.
 func (g Graph) Validate() error {
-	if len(g.Nodes) == 0 {
-		return invalid("a workflow needs at least one node")
-	}
 	if len(g.Nodes) > maxNodes {
 		return invalid("a workflow is limited to %d nodes", maxNodes)
 	}
@@ -116,83 +134,101 @@ func (g Graph) Validate() error {
 		return invalid("a workflow is limited to %d edges", maxEdges)
 	}
 
-	nodes := make(map[string]Node, len(g.Nodes))
-	var trigger string
-
+	nodes := make(map[string]struct{}, len(g.Nodes))
 	for _, node := range g.Nodes {
 		if err := checkID("node", node.ID); err != nil {
 			return err
 		}
 		if _, clash := nodes[node.ID]; clash {
 			// Two nodes with one id makes every edge touching it ambiguous,
-			// and which one wins would come down to slice order.
+			// and which one wins would come down to slice order. React Flow
+			// misbehaves the same way, so this is broken for the canvas too.
 			return invalid("duplicate node id %q", node.ID)
 		}
-		if !categories[node.Type.Category()] {
-			return invalid("node %q has unknown type %q", node.ID, node.Type)
+		if node.Data != nil && !json.Valid(node.Data) {
+			return invalid("node %q has malformed data", node.ID)
 		}
-		if node.Config != nil && !json.Valid(node.Config) {
-			return invalid("node %q has malformed config", node.ID)
-		}
+		nodes[node.ID] = struct{}{}
+	}
 
+	seen := make(map[string]struct{}, len(g.Edges))
+	for _, edge := range g.Edges {
+		if err := checkID("edge", edge.ID); err != nil {
+			return err
+		}
+		if _, clash := seen[edge.ID]; clash {
+			return invalid("duplicate edge id %q", edge.ID)
+		}
+		seen[edge.ID] = struct{}{}
+
+		// A dangling endpoint is what a deleted node leaves behind, and it is
+		// corruption rather than an unfinished thought: React Flow will not
+		// draw the edge and the engine would trip over it.
+		if _, ok := nodes[edge.Source]; !ok {
+			return invalid("edge %q starts at unknown node %q", edge.ID, edge.Source)
+		}
+		if _, ok := nodes[edge.Target]; !ok {
+			return invalid("edge %q ends at unknown node %q", edge.ID, edge.Target)
+		}
+	}
+	return nil
+}
+
+// Runnable reports whether this graph can actually execute. It is the set of
+// guarantees the engine is allowed to assume, checked once before a run rather
+// than rediscovered at every node.
+//
+// The execution service calls this; saving does not. A graph that fails here is
+// a perfectly good draft.
+func (g Graph) Runnable() error {
+	// A stored graph has already passed Validate, but Runnable is cheap and an
+	// assumption that only holds by convention is one that eventually does not.
+	if err := g.Validate(); err != nil {
+		return err
+	}
+	if len(g.Nodes) == 0 {
+		return notRunnable("a workflow needs at least one node")
+	}
+
+	nodes := make(map[string]struct{}, len(g.Nodes))
+	var trigger string
+
+	for _, node := range g.Nodes {
+		// Unknown types are a run-time question, not a save-time one: the
+		// frontend may ship a node type before this list learns about it, and
+		// that should cost a failed run rather than a failed save.
+		if !categories[node.Type.Category()] {
+			return notRunnable("node %q has unknown type %q", node.ID, node.Type)
+		}
 		if node.Type.IsTrigger() {
 			if trigger != "" {
 				// Two triggers means two possible starting points, so "what
 				// ran" would depend on which one the engine picked.
-				return invalid("a workflow has exactly one trigger, found %q and %q", trigger, node.ID)
+				return notRunnable("a workflow runs from exactly one trigger, found %q and %q", trigger, node.ID)
 			}
 			trigger = node.ID
 		}
-		nodes[node.ID] = node
+		nodes[node.ID] = struct{}{}
 	}
 
 	if trigger == "" {
-		return invalid("a workflow needs a trigger node")
+		return notRunnable("a workflow needs a trigger node")
 	}
 
-	outgoing, err := g.checkEdges(nodes, trigger)
-	if err != nil {
-		return err
+	outgoing := make(map[string][]string, len(g.Nodes))
+	for _, edge := range g.Edges {
+		if edge.Target == trigger {
+			// The trigger is where a run begins. An edge into it says
+			// something happens before the beginning.
+			return notRunnable("edge %q points back into the trigger", edge.ID)
+		}
+		outgoing[edge.Source] = append(outgoing[edge.Source], edge.Target)
 	}
+
 	if err := checkAcyclic(nodes, g.Edges); err != nil {
 		return err
 	}
-	return checkReachable(nodes, outgoing, trigger)
-}
-
-// checkEdges validates every edge and returns the adjacency list the later
-// passes walk, so the graph is only turned into a map once.
-func (g Graph) checkEdges(nodes map[string]Node, trigger string) (map[string][]string, error) {
-	seen := make(map[string]bool, len(g.Edges))
-	outgoing := make(map[string][]string, len(nodes))
-
-	for _, edge := range g.Edges {
-		if err := checkID("edge", edge.ID); err != nil {
-			return nil, err
-		}
-		if seen[edge.ID] {
-			return nil, invalid("duplicate edge id %q", edge.ID)
-		}
-		seen[edge.ID] = true
-
-		// A dangling endpoint is the common result of deleting a node in the
-		// builder and shipping the edges that pointed at it. The engine would
-		// hit it mid-run, so it is refused at save time instead.
-		if _, ok := nodes[edge.From]; !ok {
-			return nil, invalid("edge %q starts at unknown node %q", edge.ID, edge.From)
-		}
-		if _, ok := nodes[edge.To]; !ok {
-			return nil, invalid("edge %q ends at unknown node %q", edge.ID, edge.To)
-		}
-		if edge.To == trigger {
-			// The trigger is where a run begins. An edge into it says
-			// something happens before the beginning.
-			return nil, invalid("edge %q points back into the trigger", edge.ID)
-		}
-
-		outgoing[edge.From] = append(outgoing[edge.From], edge.To)
-	}
-	return outgoing, nil
+	return checkReachable(g.Nodes, outgoing, trigger)
 }
 
 // checkAcyclic refuses back-edges, by Kahn's algorithm.
@@ -201,12 +237,12 @@ func (g Graph) checkEdges(nodes map[string]Node, trigger string) (map[string][]s
 // loop detector carrying a step budget. If looping is ever wanted it should be
 // an explicit node type with a visible bound, not an accidental edge that runs
 // forever because someone dragged one connector too far.
-func checkAcyclic(nodes map[string]Node, edges []Edge) error {
+func checkAcyclic(nodes map[string]struct{}, edges []Edge) error {
 	indegree := make(map[string]int, len(nodes))
 	successors := make(map[string][]string, len(nodes))
 	for _, edge := range edges {
-		indegree[edge.To]++
-		successors[edge.From] = append(successors[edge.From], edge.To)
+		indegree[edge.Target]++
+		successors[edge.Source] = append(successors[edge.Source], edge.Target)
 	}
 
 	queue := make([]string, 0, len(nodes))
@@ -233,15 +269,15 @@ func checkAcyclic(nodes map[string]Node, edges []Edge) error {
 	// Anything left is in a cycle or downstream of one: a node in a cycle
 	// never reaches indegree zero, so it is never settled.
 	if settled != len(nodes) {
-		return invalid("the graph has a cycle")
+		return notRunnable("the graph has a cycle")
 	}
 	return nil
 }
 
 // checkReachable refuses orphans. A node the trigger cannot reach can never
-// run, so it is either a mistake or a leftover, and either way it would sit in
-// the execution view as a step that is permanently pending.
-func checkReachable(nodes map[string]Node, outgoing map[string][]string, trigger string) error {
+// run, so it would sit in the execution view as a step that is permanently
+// pending — fine on a canvas someone is still building, not fine in a run.
+func checkReachable(nodes []Node, outgoing map[string][]string, trigger string) error {
 	seen := map[string]bool{trigger: true}
 	queue := []string{trigger}
 
@@ -258,7 +294,7 @@ func checkReachable(nodes map[string]Node, outgoing map[string][]string, trigger
 
 	for _, node := range nodes {
 		if !seen[node.ID] {
-			return invalid("node %q cannot be reached from the trigger", node.ID)
+			return notRunnable("node %q cannot be reached from the trigger", node.ID)
 		}
 	}
 	return nil

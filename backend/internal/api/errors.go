@@ -46,10 +46,15 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, auth.ErrNoIdentity):
 		unauthorized(w, "invalid token")
 
-	case errors.Is(err, workflow.ErrInvalid):
-		// The caller wrote the graph, so the reason is theirs to know: "node
-		// 'x' cannot be reached from the trigger" is something they can act
-		// on, and it describes only what they just sent.
+	case errors.Is(err, workflow.ErrInvalid), errors.Is(err, workflow.ErrNotRunnable):
+		// The caller wrote the graph, so the reason is theirs to know: "edge
+		// 'e1' ends at unknown node 'ghost'" is something they can act on, and
+		// it describes only what they just sent.
+		//
+		// ErrNotRunnable cannot come from a save — a draft that cannot run is
+		// still stored. It is here for the execution routes, which reject a
+		// run rather than a save, and for the same reason: the graph is the
+		// caller's and so is the fix.
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 
 	case errors.Is(err, auth.ErrNotOwner),

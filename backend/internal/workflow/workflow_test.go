@@ -51,23 +51,39 @@ func TestCreate(t *testing.T) {
 	}
 }
 
-// The one rule this package really owns: an invalid graph never reaches the
-// store, by any path that writes one.
-func TestCreateRejectsInvalidGraph(t *testing.T) {
+// A corrupt graph never reaches the store, by any path that writes one.
+func TestCreateRejectsCorruptGraph(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
 	s := NewService(store)
 
-	orphan := Graph{
-		Nodes: []Node{node("t", "trigger.manual"), node("lonely", "http.request")},
+	dangling := Graph{
+		Nodes: []Node{node("t", "trigger.manual")},
+		Edges: []Edge{edge("e1", "t", "ghost")},
 	}
-	if _, err := s.Create(ctx, wsA, user, "bad", "", orphan); !errors.Is(err, ErrInvalid) {
+	if _, err := s.Create(ctx, wsA, user, "bad", "", dangling); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("got %v, want ErrInvalid", err)
 	}
 
 	stored, err := store.List(ctx, wsA)
 	if err != nil || len(stored) != 0 {
 		t.Fatalf("a rejected graph was stored anyway: %v, %v", stored, err)
+	}
+}
+
+// The other half of the split: a workflow nobody could run yet still saves,
+// because that is what a builder canvas looks like most of the time.
+func TestCreateAcceptsAnUnfinishedDraft(t *testing.T) {
+	ctx := context.Background()
+	s := service(t)
+
+	draft := Graph{Nodes: []Node{node("floating", "http.request")}}
+	created, err := s.Create(ctx, wsA, user, "work in progress", "", draft)
+	if err != nil {
+		t.Fatalf("a draft must save: %v", err)
+	}
+	if err := created.Graph.Runnable(); err == nil {
+		t.Fatal("this draft should not be runnable, so the test proves nothing")
 	}
 }
 
@@ -135,17 +151,17 @@ func TestUpdateIsPartial(t *testing.T) {
 	}
 }
 
-func TestUpdateRejectsInvalidGraph(t *testing.T) {
+func TestUpdateRejectsCorruptGraph(t *testing.T) {
 	ctx := context.Background()
 	store := NewMemoryStore()
 	s := NewService(store)
 	created := mustCreate(t, s)
 
-	cycle := Graph{
-		Nodes: []Node{node("t", "trigger.manual"), node("a", "http.request"), node("b", "http.request")},
-		Edges: []Edge{edge("e1", "t", "a"), edge("e2", "a", "b"), edge("e3", "b", "a")},
+	duplicate := Graph{
+		Nodes: []Node{node("t", "trigger.manual"), node("t", "http.request")},
+		Edges: []Edge{edge("e1", "t", "t")},
 	}
-	if _, err := s.Update(ctx, wsA, created.ID, Patch{Graph: &cycle}); !errors.Is(err, ErrInvalid) {
+	if _, err := s.Update(ctx, wsA, created.ID, Patch{Graph: &duplicate}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("got %v, want ErrInvalid", err)
 	}
 

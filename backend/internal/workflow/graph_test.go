@@ -9,9 +9,9 @@ import (
 // node and edge keep the tables below readable; positions are irrelevant to
 // every rule here.
 func node(id string, nodeType NodeType) Node { return Node{ID: id, Type: nodeType} }
-func edge(id, from, to string) Edge          { return Edge{ID: id, From: from, To: to} }
+func edge(id, source, target string) Edge    { return Edge{ID: id, Source: source, Target: target} }
 
-// validGraph is the smallest thing that passes: trigger -> one step.
+// validGraph is the smallest thing that both saves and runs: trigger -> step.
 func validGraph() Graph {
 	return Graph{
 		Nodes: []Node{node("t", "trigger.manual"), node("a", "http.request")},
@@ -19,66 +19,41 @@ func validGraph() Graph {
 	}
 }
 
-func TestValidateAccepts(t *testing.T) {
+// Everything a canvas can be mid-edit has to save. These are the states a
+// builder passes through on the way to something runnable, and rejecting them
+// would mean autosave failing while somebody is halfway through a thought.
+func TestValidateAcceptsDrafts(t *testing.T) {
 	cases := map[string]Graph{
-		"trigger and one step": validGraph(),
-		"trigger alone": {
-			Nodes: []Node{node("t", "trigger.webhook")},
+		"empty canvas":     {},
+		"one loose node":   {Nodes: []Node{node("a", "http.request")}},
+		"no trigger yet":   {Nodes: []Node{node("a", "http.request"), node("b", "slack.message")}},
+		"two triggers":     {Nodes: []Node{node("t1", "trigger.manual"), node("t2", "trigger.webhook")}},
+		"unknown type":     {Nodes: []Node{node("a", "kubernetes.apply")}},
+		"unreachable node": {Nodes: []Node{node("t", "trigger.manual"), node("lonely", "slack.message")}},
+		"a cycle": {
+			Nodes: []Node{node("t", "trigger.manual"), node("a", "http.request")},
+			Edges: []Edge{edge("e1", "t", "a"), edge("e2", "a", "t")},
 		},
-		"branching then merging": {
-			Nodes: []Node{
-				node("t", "trigger.manual"),
-				node("cond", "logic.condition"),
-				node("yes", "slack.message"),
-				node("no", "discord.message"),
-				node("end", "variable.set"),
-			},
-			Edges: []Edge{
-				edge("e1", "t", "cond"),
-				{ID: "e2", From: "cond", To: "yes", Branch: "true"},
-				{ID: "e3", From: "cond", To: "no", Branch: "false"},
-				edge("e4", "yes", "end"),
-				edge("e5", "no", "end"),
-			},
-		},
-		"config is opaque, not inspected": {
-			Nodes: []Node{
-				node("t", "trigger.manual"),
-				{ID: "a", Type: "ai.prompt", Config: []byte(`{"whatever":[1,2,3]}`)},
-			},
-			Edges: []Edge{edge("e1", "t", "a")},
-		},
+		"finished": validGraph(),
 	}
 
 	for name, graph := range cases {
 		t.Run(name, func(t *testing.T) {
 			if err := graph.Validate(); err != nil {
-				t.Fatalf("expected valid, got %v", err)
+				t.Fatalf("a draft must still save, got %v", err)
 			}
 		})
 	}
 }
 
-func TestValidateRejects(t *testing.T) {
+// Corruption is a different thing from an unfinished draft, and it is refused
+// on the way in: storing it would mean storing something React Flow cannot
+// draw and the engine cannot read.
+func TestValidateRejectsCorruption(t *testing.T) {
 	cases := map[string]struct {
 		graph Graph
 		want  string
 	}{
-		"no nodes": {
-			graph: Graph{},
-			want:  "at least one node",
-		},
-		"no trigger": {
-			graph: Graph{Nodes: []Node{node("a", "http.request")}},
-			want:  "needs a trigger",
-		},
-		"two triggers": {
-			graph: Graph{Nodes: []Node{
-				node("t1", "trigger.manual"),
-				node("t2", "trigger.webhook"),
-			}},
-			want: "exactly one trigger",
-		},
 		"empty node id": {
 			graph: Graph{Nodes: []Node{node("  ", "trigger.manual")}},
 			want:  "every node needs an id",
@@ -90,22 +65,11 @@ func TestValidateRejects(t *testing.T) {
 			}},
 			want: "duplicate node id",
 		},
-		"unknown category": {
+		"malformed data": {
 			graph: Graph{Nodes: []Node{
-				node("t", "trigger.manual"),
-				node("a", "kubernetes.apply"),
+				{ID: "t", Type: "trigger.manual", Data: []byte(`{not json`)},
 			}},
-			want: "unknown type",
-		},
-		"type without an action": {
-			graph: Graph{Nodes: []Node{node("t", "trigger")}},
-			want:  "unknown type",
-		},
-		"malformed config": {
-			graph: Graph{Nodes: []Node{
-				{ID: "t", Type: "trigger.manual", Config: []byte(`{not json`)},
-			}},
-			want: "malformed config",
+			want: "malformed data",
 		},
 		"edge from nowhere": {
 			graph: Graph{
@@ -127,6 +91,103 @@ func TestValidateRejects(t *testing.T) {
 				Edges: []Edge{edge("e1", "t", "a"), edge("e1", "t", "a")},
 			},
 			want: "duplicate edge id",
+		},
+		"node id too long": {
+			graph: Graph{Nodes: []Node{node(strings.Repeat("x", maxIDLen+1), "trigger.manual")}},
+			want:  "longer than",
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := tc.graph.Validate()
+			if err == nil {
+				t.Fatal("expected rejection, got nil")
+			}
+			// Every rejection has to be recognisable to the API layer, or it
+			// answers 500 for a graph the caller could have fixed.
+			if !errors.Is(err, ErrInvalid) {
+				t.Fatalf("error does not wrap ErrInvalid: %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("got %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestRunnableAccepts(t *testing.T) {
+	cases := map[string]Graph{
+		"trigger and one step": validGraph(),
+		"trigger alone": {
+			Nodes: []Node{node("t", "trigger.webhook")},
+		},
+		"branching then merging": {
+			Nodes: []Node{
+				node("t", "trigger.manual"),
+				node("cond", "logic.condition"),
+				node("yes", "slack.message"),
+				node("no", "discord.message"),
+				node("end", "variable.set"),
+			},
+			Edges: []Edge{
+				edge("e1", "t", "cond"),
+				{ID: "e2", Source: "cond", Target: "yes", SourceHandle: "true"},
+				{ID: "e3", Source: "cond", Target: "no", SourceHandle: "false"},
+				edge("e4", "yes", "end"),
+				edge("e5", "no", "end"),
+			},
+		},
+		"data is opaque, not inspected": {
+			Nodes: []Node{
+				node("t", "trigger.manual"),
+				{ID: "a", Type: "ai.prompt", Data: []byte(`{"label":"summarise","whatever":[1,2,3]}`)},
+			},
+			Edges: []Edge{edge("e1", "t", "a")},
+		},
+	}
+
+	for name, graph := range cases {
+		t.Run(name, func(t *testing.T) {
+			if err := graph.Runnable(); err != nil {
+				t.Fatalf("expected runnable, got %v", err)
+			}
+		})
+	}
+}
+
+// The guarantees the engine gets to assume. Each of these saves fine and fails
+// here instead.
+func TestRunnableRejects(t *testing.T) {
+	cases := map[string]struct {
+		graph Graph
+		want  string
+	}{
+		"no nodes": {
+			graph: Graph{},
+			want:  "at least one node",
+		},
+		"no trigger": {
+			graph: Graph{Nodes: []Node{node("a", "http.request")}},
+			want:  "needs a trigger",
+		},
+		"two triggers": {
+			graph: Graph{Nodes: []Node{
+				node("t1", "trigger.manual"),
+				node("t2", "trigger.webhook"),
+			}},
+			want: "exactly one trigger",
+		},
+		"unknown category": {
+			graph: Graph{Nodes: []Node{
+				node("t", "trigger.manual"),
+				node("a", "kubernetes.apply"),
+			}},
+			want: "unknown type",
+		},
+		"type without an action": {
+			graph: Graph{Nodes: []Node{node("t", "trigger")}},
+			want:  "unknown type",
 		},
 		"edge into the trigger": {
 			graph: Graph{
@@ -170,27 +231,38 @@ func TestValidateRejects(t *testing.T) {
 			},
 			want: "cannot be reached",
 		},
-		"node id too long": {
-			graph: Graph{Nodes: []Node{node(strings.Repeat("x", maxIDLen+1), "trigger.manual")}},
-			want:  "longer than",
-		},
 	}
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := tc.graph.Validate()
+			// It saves. That is the point of the split.
+			if err := tc.graph.Validate(); err != nil {
+				t.Fatalf("this should still be a savable draft, got %v", err)
+			}
+
+			err := tc.graph.Runnable()
 			if err == nil {
 				t.Fatal("expected rejection, got nil")
 			}
-			// Every rejection has to be recognisable to the API layer, or it
-			// answers 500 for a graph the caller could have fixed.
-			if !errors.Is(err, ErrInvalid) {
-				t.Fatalf("error does not wrap ErrInvalid: %v", err)
+			if !errors.Is(err, ErrNotRunnable) {
+				t.Fatalf("error does not wrap ErrNotRunnable: %v", err)
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("got %q, want it to mention %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// Corruption stays corruption even when it is Runnable being asked, so the
+// engine never has to re-check what the store already promised.
+func TestRunnableStillCatchesCorruption(t *testing.T) {
+	graph := Graph{
+		Nodes: []Node{node("t", "trigger.manual")},
+		Edges: []Edge{edge("e1", "t", "ghost")},
+	}
+	if err := graph.Runnable(); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("got %v, want ErrInvalid", err)
 	}
 }
 
