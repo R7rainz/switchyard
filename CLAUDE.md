@@ -363,6 +363,67 @@ builds that binding from the workspace it was *asked* for, so a store that ever
 dropped its `WHERE` clause returns a decryption failure instead of another
 workspace's key.
 
+### Workflows
+
+**A workflow is data.** `internal/workflow` owns the graph, its validation, and
+its rows; it runs nothing. `0005` adds the `workflow` table.
+
+**The graph is one `jsonb` column, not normalized node and edge tables.**
+Nothing ever reads a single node: the builder sends the whole graph, the engine
+walks the whole graph, a diff compares whole graphs. Splitting it would cost a
+join and N inserts per autosave and buy back a query nobody makes.
+
+**`Graph.Validate` in `graph.go` is the point of the package**, and everything
+downstream is allowed to assume it passed:
+
+    unique non-empty node and edge ids       every edge endpoint is a real node
+    a known node-type category               exactly one trigger, nothing into it
+    no cycles                                every node reachable from the trigger
+
+**Only the category is checked, not the action** — `http.` is known,
+`http.request` is not verified. Whether an action exists is the node registry's
+question and the registry ships with the engine; guessing the list here would
+mean stored graphs disagreeing with it later, which is a migration rather than a
+validation. `categories` is the one place to add a family.
+
+**Cycles are rejected** so the engine can be a topological walk rather than a
+loop detector carrying a step budget. Looping, if it is ever wanted, is an
+explicit node type with a visible bound.
+
+`Node.Config` is `json.RawMessage` and is only checked for being well-formed
+JSON. This package does not know what an AI node needs, and keeping it opaque
+means an unrecognised field survives a save/load round trip.
+
+**No `workflow_version` table, deliberately.** Determinism is what would demand
+one, and pinning the graph on the execution row satisfies that completely —
+an execution keeps what it ran, so a later edit cannot change what it appears
+to have done. History and rollback are a product feature and an additive
+migration when they are wanted.
+
+**Update is read-modify-write with no locking**: two people editing one workflow
+means the later save wins. The fix, when that stops being acceptable, is a
+revision column the client echoes back, not a transaction.
+
+`Patch` fields are pointers, so "not sent" and "set to empty" stay different
+things — the builder autosaves the graph alone and that must not blank the
+description.
+
+Every `Store` method takes a workspace id and puts it in the `WHERE` clause. A
+workflow id alone would find the row, which is the danger: `RequirePermission`
+checked the workspace in the URL, so a lookup by id alone hands workspace B's
+admin a workflow from workspace A. `TestStoreContract` runs one set of
+expectations against `MemoryStore` and `PostgresStore` so the two cannot drift
+the way the workspace slug rule once did.
+
+Routes sit under `/workspaces/{workspaceID}/workflows`, gated on
+`workflow:read` (VIEWER), `workflow:write`, and `workflow:delete` (MEMBER).
+`writeError` maps `workflow.ErrInvalid` to **400 carrying the reason** — the
+caller wrote the graph, so "node 'x' cannot be reached from the trigger" is
+theirs to know and describes only what they just sent.
+
+Graph bodies use `decodeJSONLimit` at 1 MiB; the default 64 KiB is for the
+endpoints that take a handful of short fields.
+
 ## Commands
 
 Postgres, from the repo root:
