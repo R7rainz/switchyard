@@ -17,6 +17,7 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/config"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
+	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 	"github.com/R7rainz/switchyard/backend/migrations"
 )
@@ -79,13 +80,14 @@ func main() {
 	workspaceStore := workspace.NewPostgresStore(pool)
 	workspaces := workspace.NewService(workspaceStore)
 	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
+	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
 
 	// The issuer is the frontend's base URL, so it is also where an invite link
 	// has to send someone: accepting needs a signed-in user, which only the
 	// frontend can produce.
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: api.NewRouter(verifier, logger, workspaces, credentials, cfg.AuthIssuer),
+		Handler: api.NewRouter(verifier, logger, workspaces, credentials, workflows, cfg.AuthIssuer),
 		// Bound how long a connection can sit half-open holding a slot.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

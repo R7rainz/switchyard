@@ -34,7 +34,7 @@ func credentialRouter(t *testing.T) (http.Handler, *workspace.Service) {
 	workspaces := workspace.NewService(store)
 	credentials := credential.NewService(credential.NewMemoryStore(), ring)
 
-	router := NewRouter(tokenNamesTheCaller{}, testLogger(), workspaces, credentials, testAppURL)
+	router := NewRouter(tokenNamesTheCaller{}, testLogger(), workspaces, credentials, nil, testAppURL)
 	return router, workspaces
 }
 

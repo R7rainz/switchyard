@@ -14,6 +14,7 @@ import (
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
 
@@ -27,14 +28,14 @@ type TokenVerifier interface {
 // NewRouter builds the HTTP surface. Routing, encoding, and auth enforcement
 // live here; everything else belongs to the domain packages.
 //
-// credentials has no routes yet. It is wired now so that adding them is a
-// handler and nothing else, and appURL is the frontend's base URL, which is
-// where an invite link has to point: the invitee needs a page, not this API.
+// appURL is the frontend's base URL, which is where an invite link has to
+// point: the invitee needs a page, not this API.
 func NewRouter(
 	verifier TokenVerifier,
 	logger zerolog.Logger,
 	workspaces *workspace.Service,
 	credentials *credential.Service,
+	workflows *workflow.Service,
 	appURL string,
 ) http.Handler {
 	router := chi.NewRouter()
@@ -54,6 +55,7 @@ func NewRouter(
 
 	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
 	creds := &credentialAPI{credentials: credentials}
+	flows := &workflowAPI{workflows: workflows}
 
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
@@ -86,6 +88,19 @@ func NewRouter(
 			r.With(keys).Get("/credentials", creds.listCredentials)
 			r.With(keys).Put("/credentials/{provider}/{name}", creds.putCredential)
 			r.With(keys).Delete("/credentials/{provider}/{name}", creds.deleteCredential)
+
+			// Delete is its own permission rather than folded into write: a
+			// member may edit a workflow they did not draw, and deleting one is
+			// the change that cannot be undone by editing it back.
+			readFlows := RequirePermission(workspaces, auth.PermissionWorkflowRead)
+			writeFlows := RequirePermission(workspaces, auth.PermissionWorkflowWrite)
+			dropFlows := RequirePermission(workspaces, auth.PermissionWorkflowDelete)
+
+			r.With(readFlows).Get("/workflows", flows.listWorkflows)
+			r.With(writeFlows).Post("/workflows", flows.createWorkflow)
+			r.With(readFlows).Get("/workflows/{workflowID}", flows.getWorkflow)
+			r.With(writeFlows).Patch("/workflows/{workflowID}", flows.updateWorkflow)
+			r.With(dropFlows).Delete("/workflows/{workflowID}", flows.deleteWorkflow)
 		})
 
 		// Accepting cannot be workspace-scoped: the caller holds no membership
@@ -220,14 +235,21 @@ func unauthorized(w http.ResponseWriter, message string) {
 	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": message})
 }
 
-// maxBodyBytes caps a request body. Nothing here takes more than a handful of
-// short fields, and an unbounded decode is memory the caller chooses.
+// maxBodyBytes caps a request body. Most endpoints here take a handful of short
+// fields, and an unbounded decode is memory the caller chooses.
 const maxBodyBytes = 64 << 10
 
 // decodeJSON reads a JSON body into v, refusing unknown fields so a misspelled
 // key is a 400 rather than a value that is quietly ignored.
 func decodeJSON(r *http.Request, v any) error {
-	decoder := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
+	return decodeJSONLimit(r, v, maxBodyBytes)
+}
+
+// decodeJSONLimit is decodeJSON with a different cap, for the endpoints whose
+// bodies are legitimately large — a workflow graph carries node configs, so the
+// default would reject real work.
+func decodeJSONLimit(r *http.Request, v any, limit int64) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(v); err != nil {
 		return invalid("request body: %v", err)
