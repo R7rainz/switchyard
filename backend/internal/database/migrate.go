@@ -18,6 +18,12 @@ import (
 // then find nothing to do.
 const migrationLockKey int64 = 8_675_309
 
+// TestSchemaLock is a second advisory lock key, for test helpers that reset the
+// schema. go test runs packages in parallel and several of them wipe the same
+// database, so they serialise on this; it lives here so the three packages
+// cannot drift onto different keys and silently stop coordinating.
+const TestSchemaLock int64 = 918_273_645
+
 // Migration is one SQL file waiting to be applied.
 type Migration struct {
 	Version int64
@@ -156,8 +162,8 @@ func loadMigrations(files fs.FS) ([]Migration, error) {
 func versionOf(name string) (int64, error) {
 	base := path.Base(name)
 	digits := base
-	if cut := strings.IndexByte(base, '_'); cut >= 0 {
-		digits = base[:cut]
+	if before, _, found := strings.Cut(base, "_"); found {
+		digits = before
 	} else {
 		digits = strings.TrimSuffix(base, ".sql")
 	}

@@ -28,8 +28,8 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Addr != ":8080" {
-		t.Errorf("Addr = %q, want :8080", cfg.Addr)
+	if cfg.Addr != ":8090" {
+		t.Errorf("Addr = %q, want :8090", cfg.Addr)
 	}
 	if got, want := cfg.AuthJWKSURL(), "http://localhost:3007/api/auth/jwks"; got != want {
 		t.Errorf("AuthJWKSURL() = %q, want %q", got, want)

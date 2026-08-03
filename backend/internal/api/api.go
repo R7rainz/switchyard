@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
+	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
 
 // TokenVerifier is the part of the auth package this layer needs. It is
@@ -23,22 +26,72 @@ type TokenVerifier interface {
 
 // NewRouter builds the HTTP surface. Routing, encoding, and auth enforcement
 // live here; everything else belongs to the domain packages.
-func NewRouter(verifier TokenVerifier, logger zerolog.Logger) http.Handler {
+//
+// credentials has no routes yet. It is wired now so that adding them is a
+// handler and nothing else, and appURL is the frontend's base URL, which is
+// where an invite link has to point: the invitee needs a page, not this API.
+func NewRouter(
+	verifier TokenVerifier,
+	logger zerolog.Logger,
+	workspaces *workspace.Service,
+	credentials *credential.Service,
+	appURL string,
+) http.Handler {
 	router := chi.NewRouter()
 
 	// RequestID first, so every line the other middleware logs can be tied
 	// back to one request.
 	router.Use(middleware.RequestID)
 	router.Use(RequestLogger(logger))
+	// Before RequireAuth, because a preflight carries no Authorization header
+	// and a 401 would stop the real request from ever being sent.
+	router.Use(CORS(appURL))
 	// A panic in one handler should fail one request, not the process.
 	router.Use(middleware.Recoverer)
 
 	// Unauthenticated: this is what a load balancer polls.
 	router.Get("/healthz", handleHealthz)
 
+	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
+	creds := &credentialAPI{credentials: credentials}
+
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
 		r.Get("/me", handleMe)
+
+		r.Get("/workspaces", ws.listWorkspaces)
+		r.Post("/workspaces", ws.createWorkspace)
+
+		r.Route("/workspaces/{workspaceID}", func(r chi.Router) {
+			read := RequirePermission(workspaces, auth.PermissionMemberRead)
+			manage := RequirePermission(workspaces, auth.PermissionMemberManage)
+
+			r.With(read).Get("/members", ws.listMembers)
+			r.With(manage).Patch("/members/{userID}", ws.setRole)
+			// Leaving is gated on membership alone, not member:manage: the
+			// service already requires manage to remove somebody else, and a
+			// viewer who could never leave would be stuck in a workspace they
+			// were invited to by mistake.
+			r.With(read).Delete("/members/{userID}", ws.removeMember)
+
+			r.With(manage).Post("/invites", ws.createInvite)
+			r.With(manage).Get("/invites", ws.listInvites)
+			r.With(manage).Delete("/invites/{inviteID}", ws.revokeInvite)
+
+			// Credentials sit at ADMIN even to list. A member runs workflows
+			// that use the keys; which keys exist is a different question, and
+			// the listing alone tells you which providers a workspace is
+			// wired to.
+			keys := RequirePermission(workspaces, auth.PermissionCredentialManage)
+			r.With(keys).Get("/credentials", creds.listCredentials)
+			r.With(keys).Put("/credentials/{provider}/{name}", creds.putCredential)
+			r.With(keys).Delete("/credentials/{provider}/{name}", creds.deleteCredential)
+		})
+
+		// Accepting cannot be workspace-scoped: the caller holds no membership
+		// yet, which is the entire point of an invite. It still needs a token,
+		// because the invite grants membership to a user, not to a browser.
+		r.Post("/invites/{token}/accept", ws.acceptInvite)
 	})
 
 	return router
@@ -70,7 +123,7 @@ func RequestLogger(logger zerolog.Logger) func(http.Handler) http.Handler {
 
 			logger.WithLevel(level).
 				Str("method", r.Method).
-				Str("path", r.URL.Path).
+				Str("path", logPath(r.URL.Path)).
 				Int("status", recorder.Status()).
 				Int("bytes", recorder.BytesWritten()).
 				Dur("duration", time.Since(started)).
@@ -113,6 +166,21 @@ func RequireAuth(verifier TokenVerifier, logger zerolog.Logger) func(http.Handle
 	}
 }
 
+// invitePrefix is where the accept route lives. An invite token travels in
+// that URL and is a bearer credential, so the path is the one field that has to
+// be edited before it is written down.
+const invitePrefix = "/api/invites/"
+
+// logPath strips the invite token out of a request path. A log line is exactly
+// the place a token must not end up: anyone reading the log could otherwise
+// join the workspace it was issued for.
+func logPath(path string) string {
+	if strings.HasPrefix(path, invitePrefix) {
+		return invitePrefix + "{token}/accept"
+	}
+	return path
+}
+
 func handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	_, _ = w.Write([]byte("ok"))
@@ -150,6 +218,21 @@ func bearerToken(r *http.Request) (string, bool) {
 func unauthorized(w http.ResponseWriter, message string) {
 	w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
 	writeJSON(w, http.StatusUnauthorized, map[string]any{"error": message})
+}
+
+// maxBodyBytes caps a request body. Nothing here takes more than a handful of
+// short fields, and an unbounded decode is memory the caller chooses.
+const maxBodyBytes = 64 << 10
+
+// decodeJSON reads a JSON body into v, refusing unknown fields so a misspelled
+// key is a 400 rather than a value that is quietly ignored.
+func decodeJSON(r *http.Request, v any) error {
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxBodyBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(v); err != nil {
+		return invalid("request body: %v", err)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

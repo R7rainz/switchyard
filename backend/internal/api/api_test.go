@@ -28,7 +28,7 @@ func (s *stubVerifier) Verify(_ context.Context, token string) (*auth.Claims, er
 }
 
 func TestHealthzNeedsNoToken(t *testing.T) {
-	router := NewRouter(&stubVerifier{accept: "good"}, testLogger())
+	router := testRouter(&stubVerifier{accept: "good"}, testLogger())
 
 	recorder := httptest.NewRecorder()
 	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/healthz", nil))
@@ -57,7 +57,7 @@ func TestRequireAuthRejects(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			verifier := &stubVerifier{accept: "good"}
-			router := NewRouter(verifier, testLogger())
+			router := testRouter(verifier, testLogger())
 
 			request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 			if tc.authHeader != "" {
@@ -85,7 +85,7 @@ func TestRequireAuthRejects(t *testing.T) {
 }
 
 func TestRequireAuthAcceptsValidTokenAndPassesClaims(t *testing.T) {
-	router := NewRouter(&stubVerifier{accept: "good"}, testLogger())
+	router := testRouter(&stubVerifier{accept: "good"}, testLogger())
 
 	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	request.Header.Set("Authorization", "Bearer good")
@@ -111,7 +111,7 @@ func TestRequireAuthAcceptsValidTokenAndPassesClaims(t *testing.T) {
 
 func TestRequireAuthAcceptsLowercaseScheme(t *testing.T) {
 	// RFC 7235 makes the scheme case-insensitive, and clients do vary.
-	router := NewRouter(&stubVerifier{accept: "good"}, testLogger())
+	router := testRouter(&stubVerifier{accept: "good"}, testLogger())
 
 	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	request.Header.Set("Authorization", "bearer good")

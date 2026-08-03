@@ -31,11 +31,18 @@ func testPool(t *testing.T) *Pool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	pool, err := Connect(ctx, Options{URL: url, ConnectTimeout: 5 * time.Second})
+	// One connection, so the advisory lock is held on it for the whole test.
+	pool, err := Connect(ctx, Options{URL: url, MaxConns: 1, ConnectTimeout: 5 * time.Second})
 	if err != nil {
 		t.Fatalf("Connect: %v", err)
 	}
 	t.Cleanup(pool.Close)
+
+	// The workspace and credential store tests reset this same database, and
+	// go test runs those packages in parallel with this one.
+	if _, err := pool.Exec(ctx, "select pg_advisory_lock($1)", TestSchemaLock); err != nil {
+		t.Fatalf("taking the test schema lock: %v", err)
+	}
 	return pool
 }
 

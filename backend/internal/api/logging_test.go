@@ -42,7 +42,7 @@ func decodeLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 
 func TestRequestLoggerRecordsTheRequest(t *testing.T) {
 	var buf bytes.Buffer
-	router := NewRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
+	router := testRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
 
 	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	request.Header.Set("Authorization", "Bearer good")
@@ -77,7 +77,7 @@ func TestHealthzLogsAtDebug(t *testing.T) {
 	// A load balancer polls this every few seconds; at info it would drown
 	// everything else.
 	var buf bytes.Buffer
-	router := NewRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
+	router := testRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
 
 	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
@@ -86,7 +86,7 @@ func TestHealthzLogsAtDebug(t *testing.T) {
 	}
 
 	buf.Reset()
-	router = NewRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.DebugLevel))
+	router = testRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.DebugLevel))
 	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", nil))
 
 	if buf.Len() == 0 {
@@ -96,7 +96,7 @@ func TestHealthzLogsAtDebug(t *testing.T) {
 
 func TestRejectedTokenIsLoggedButNotReturned(t *testing.T) {
 	var buf bytes.Buffer
-	router := NewRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
+	router := testRouter(&stubVerifier{accept: "good"}, captureLogs(&buf, zerolog.InfoLevel))
 
 	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
 	request.Header.Set("Authorization", "Bearer forged")

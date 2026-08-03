@@ -200,6 +200,17 @@ func (s *Service) Remove(ctx context.Context, workspaceID, callerID, targetID st
 	return s.store.DeleteMember(ctx, workspaceID, targetID)
 }
 
+// List returns the workspaces this user belongs to.
+//
+// No permission check: membership is the filter. The query returns only
+// workspaces the caller is in, so there is nothing here they could not see.
+func (s *Service) List(ctx context.Context, userID string) ([]Workspace, error) {
+	if userID == "" {
+		return nil, auth.ErrNoIdentity
+	}
+	return s.store.ListWorkspacesForUser(ctx, userID)
+}
+
 // Members lists a workspace's members for a caller allowed to see them.
 func (s *Service) Members(ctx context.Context, workspaceID, callerID string) ([]Member, error) {
 	if _, err := s.Authorize(ctx, workspaceID, callerID, auth.PermissionMemberRead); err != nil {

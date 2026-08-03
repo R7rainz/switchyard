@@ -69,7 +69,7 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Addr:         envOr("SWITCHYARD_ADDR", ":8080"),
+		Addr:         envOr("SWITCHYARD_ADDR", ":8090"),
 		AuthIssuer:   envOr("SWITCHYARD_AUTH_ISSUER", "http://localhost:3007"),
 		AuthAudience: envOr("SWITCHYARD_AUTH_AUDIENCE", "switchyard-backend"),
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
