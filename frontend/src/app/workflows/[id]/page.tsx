@@ -1,0 +1,293 @@
+"use client";
+
+import {
+  Background,
+  Controls,
+  ReactFlow,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  type Connection,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { ArrowLeft, Play } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { nodeTypes } from "@/components/builder/node";
+import { Inspector, Palette, SaveState } from "@/components/builder/panels";
+import { RunStatus } from "@/components/run-status";
+import { Button, ErrorNote, Skeleton, Wordmark } from "@/components/ui";
+import {
+  apiError,
+  workflows,
+  type Graph,
+  type Workflow as WorkflowRecord,
+  type WorkflowNode,
+} from "@/lib/api";
+import { specFor } from "@/lib/node-types";
+import { useExecutions, useStartExecution, useWorkflow, useWorkspace } from "@/lib/queries";
+
+/**
+ * The builder.
+ *
+ * React Flow's node and edge shape is exactly what the API stores, so there is
+ * no mapping layer — `toGraph` below is a strip, not a translation, and that
+ * distinction matters: the moment it starts renaming fields, the canvas and the
+ * engine have two representations that can drift.
+ */
+export default function BuilderPage() {
+  const { id } = useParams<{ id: string }>();
+  const { workspace } = useWorkspace();
+  const { data: workflow, isPending, error } = useWorkflow(workspace?.id, id);
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-md p-10">
+        <ErrorNote>{apiError(error)}</ErrorNote>
+      </div>
+    );
+  }
+  if (isPending || !workflow || !workspace) return <BuilderSkeleton />;
+
+  // Keyed on the workflow, so the canvas below can seed its state from props at
+  // mount rather than in an effect. Seeding in an effect means a render with an
+  // empty canvas first, and a second setState before anything is painted.
+  return <Builder key={workflow.id} workspaceId={workspace.id} workflow={workflow} />;
+}
+
+function Builder({
+  workspaceId,
+  workflow,
+}: {
+  workspaceId: string;
+  workflow: WorkflowRecord;
+}) {
+  const id = workflow.id;
+
+  // Initialised once, from the graph as it was fetched. A later refetch does
+  // not re-seed: it would throw away whatever is being dragged at that moment.
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>(
+    workflow.graph.nodes as unknown as Node[],
+  );
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>(
+    workflow.graph.edges as unknown as Edge[],
+  );
+
+  const graph = useMemo(() => toGraph(nodes, edges), [nodes, edges]);
+  const { saving, saveError, dirty } = useAutosave(workspaceId, id, graph);
+
+  const selected = nodes.find((node) => node.selected);
+  const start = useStartExecution(workspaceId);
+  const { data: runs } = useExecutions(workspaceId);
+  const lastRun = runs?.find((run) => run.workflowId === id);
+
+  const addNode = useCallback(
+    (type: string) => {
+      setNodes((current) => {
+        // Placed to the right of whatever is furthest right, so a new node
+        // never lands on top of an existing one.
+        const x = current.length === 0 ? 80 : Math.max(...current.map((n) => n.position.x)) + 260;
+        return [
+          ...current,
+          {
+            id: nextId(type, current),
+            type,
+            position: { x, y: 160 },
+            data: { label: specFor(type)?.label ?? type },
+          } as Node,
+        ];
+      });
+    },
+    [setNodes],
+  );
+
+  const updateData = useCallback(
+    (nodeId: string, data: Record<string, unknown>) =>
+      setNodes((current) =>
+        current.map((node) => (node.id === nodeId ? { ...node, data } : node)),
+      ),
+    [setNodes],
+  );
+
+  const deleteNode = useCallback(
+    (nodeId: string) => {
+      setNodes((current) => current.filter((node) => node.id !== nodeId));
+      // Edges touching a deleted node go with it. The backend would reject a
+      // graph whose edge ends nowhere, and it would be right to.
+      setEdges((current) =>
+        current.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+      );
+    },
+    [setNodes, setEdges],
+  );
+
+  return (
+    <div className="flex h-screen flex-col bg-cream-wash">
+      <header className="flex h-[62px] shrink-0 items-center gap-4 border-b border-hairline bg-canvas-white px-4">
+        <Link href="/workflows" className="flex items-center gap-2 text-ash hover:text-ink">
+          <ArrowLeft size={16} strokeWidth={1.75} />
+          <Wordmark className="hidden sm:inline-flex" />
+        </Link>
+
+        <span className="ml-2 min-w-0 flex-1 truncate text-body-sm text-ink">
+          {workflow.name}
+        </span>
+
+        <SaveState saving={saving} error={saveError} dirty={dirty} />
+        {lastRun && <RunStatus status={lastRun.status} />}
+
+        <Button
+          className="h-9"
+          // A graph with no nodes has no trigger, and the engine rejects that
+          // at Start. Saying so here beats a 400 the user has to interpret.
+          disabled={nodes.length === 0 || start.isPending || dirty || saving}
+          title={dirty || saving ? "Saving…" : undefined}
+          onClick={() => start.mutate(id)}
+        >
+          <Play size={13} strokeWidth={2} />
+          Run
+        </Button>
+      </header>
+
+      <div className="flex min-h-0 flex-1">
+        <Palette onAdd={addNode} />
+
+        <div className="min-w-0 flex-1">
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={(connection: Connection) =>
+              setEdges((current) => addEdge({ ...connection, id: edgeId(current) }, current))
+            }
+            nodeTypes={nodeTypes}
+            fitView
+            proOptions={{ hideAttribution: false }}
+            className="bg-cream-wash"
+          >
+            <Background color="#b1b1af" gap={20} size={1} />
+            <Controls showInteractive={false} />
+          </ReactFlow>
+        </div>
+
+        <Inspector
+          node={selected as WorkflowNode | undefined}
+          onChange={updateData}
+          onDelete={deleteNode}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The canvas arrays, reduced to what the API accepts.
+ *
+ * React Flow decorates its nodes with `measured`, `selected`, `dragging`, and
+ * more, and the backend decodes with DisallowUnknownFields — so sending the
+ * arrays as-is is a 400, not a stored graph. This is also the right boundary
+ * on its own terms: `selected` is a property of this session's canvas, not of
+ * the workflow.
+ */
+function toGraph(nodes: Node[], edges: Edge[]): Graph {
+  return {
+    nodes: nodes.map((node) => ({
+      id: node.id,
+      type: node.type ?? "",
+      position: { x: Math.round(node.position.x), y: Math.round(node.position.y) },
+      data: (node.data ?? {}) as Record<string, unknown>,
+    })),
+    edges: edges.map((edge) => ({
+      id: edge.id,
+      source: edge.source,
+      target: edge.target,
+      // Omitted rather than sent empty: an edge with no handle is the default
+      // path, and the engine tests for exactly that.
+      ...(edge.sourceHandle ? { sourceHandle: edge.sourceHandle } : {}),
+    })),
+  };
+}
+
+/**
+ * Saves the graph after edits stop.
+ *
+ * A save is a draft — the backend stores half-built graphs on purpose — so
+ * autosaving mid-thought is expected rather than something to guard against.
+ * Debounced because dragging a node fires a change per frame.
+ */
+function useAutosave(workspaceId: string, id: string, graph: Graph) {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  // What the server last accepted, as text. Comparing against it is what stops
+  // a re-render with identical content from writing again.
+  const savedRef = useRef<string | null>(null);
+
+  const serialised = JSON.stringify(graph);
+
+  useEffect(() => {
+    if (savedRef.current === null) {
+      savedRef.current = serialised;
+      return;
+    }
+    if (savedRef.current === serialised) return;
+
+    setDirty(true);
+    const timer = setTimeout(async () => {
+      setSaving(true);
+      try {
+        await workflows.update(workspaceId, id, { graph: JSON.parse(serialised) as Graph });
+        savedRef.current = serialised;
+        setDirty(false);
+        setSaveError(null);
+      } catch (cause) {
+        // Left dirty on purpose: the next edit retries, and the indicator keeps
+        // saying so rather than claiming a save that did not happen.
+        setSaveError(apiError(cause));
+      } finally {
+        setSaving(false);
+      }
+    }, 700);
+
+    return () => clearTimeout(timer);
+  }, [serialised, workspaceId, id]);
+
+  return { saving, saveError, dirty };
+}
+
+/** Short, readable, and unique: what a template reference has to be written by hand against. */
+function nextId(type: string, existing: Node[]) {
+  const stem = (type.split(".")[1] ?? type).slice(0, 8);
+  let n = 1;
+  while (existing.some((node) => node.id === `${stem}${n}`)) n += 1;
+  return `${stem}${n}`;
+}
+
+function edgeId(existing: Edge[]) {
+  let n = 1;
+  while (existing.some((edge) => edge.id === `e${n}`)) n += 1;
+  return `e${n}`;
+}
+
+function BuilderSkeleton() {
+  return (
+    <div className="flex h-screen flex-col bg-cream-wash">
+      <div className="flex h-[62px] shrink-0 items-center gap-4 border-b border-hairline bg-canvas-white px-4">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="ml-2 h-4 w-40" />
+      </div>
+      <div className="flex min-h-0 flex-1">
+        <div className="w-56 shrink-0 border-r border-hairline bg-canvas-white p-4">
+          <Skeleton className="h-40 w-full" />
+        </div>
+        <div className="flex-1" />
+      </div>
+    </div>
+  );
+}

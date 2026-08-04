@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
@@ -139,9 +140,13 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
         {/* The graph, not a node count. Two workflows called "deploy" read
             identically by name and differently by shape, and recognising one
             is the entire job of this screen. */}
-        <div className="rounded-t-xl bg-cream-wash px-4 py-4">
+        <Link
+          href={`/workflows/${workflow.id}`}
+          aria-label={`Open ${workflow.name}`}
+          className="block rounded-t-xl bg-cream-wash px-4 py-4 hover:bg-pearl"
+        >
           <GraphPreview graph={workflow.graph} className="h-24 w-full" />
-        </div>
+        </Link>
 
         <div className="flex items-start justify-between gap-3 px-5">
           {/* Not a link yet: the page this opens is the builder, and a card

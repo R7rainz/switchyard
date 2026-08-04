@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, type ReactNode } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -16,6 +16,7 @@ import { Splash } from "@/components/ui";
  */
 export default function WorkflowsLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { data: session, isPending } = useSession();
 
   useEffect(() => {
@@ -23,6 +24,10 @@ export default function WorkflowsLayout({ children }: { children: ReactNode }) {
   }, [isPending, session, router]);
 
   if (isPending || !session) return <Splash />;
+
+  // The builder is a full-bleed canvas with its own header. Wrapping it in the
+  // centred 1200px shell would box the canvas and stack two headers.
+  if (pathname !== "/workflows") return <>{children}</>;
 
   return <AppShell>{children}</AppShell>;
 }
