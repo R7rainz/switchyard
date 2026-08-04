@@ -120,4 +120,24 @@ export const workflows = {
 
   remove: (workspaceId: string, id: string) =>
     api.delete(`/api/workspaces/${workspaceId}/workflows/${id}`).then(() => undefined),
+
+  /**
+   * Ask a model for a workflow. Nothing is stored.
+   *
+   * The graph comes back for the canvas to open, and saving it is a separate
+   * `create` the user triggers after looking at it — AI assists, it does not
+   * own. Put the result straight into `useNodesState`/`useEdgesState`; it is
+   * already in React Flow's shape.
+   */
+  generate: (workspaceId: string, prompt: string) =>
+    api
+      .post<Generated>(`/api/workspaces/${workspaceId}/workflows/generate`, { prompt })
+      .then((r) => r.data),
+};
+
+/** A proposed workflow. It has no id, because it does not exist yet. */
+export type Generated = {
+  name: string;
+  description: string;
+  graph: Graph;
 };

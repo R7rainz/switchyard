@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 
+	"github.com/R7rainz/switchyard/backend/internal/ai"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -72,6 +73,20 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		// Not being a member lands here for the same reason. Being told
 		// "forbidden" would map out which workspaces exist.
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
+
+	case errors.Is(err, ai.ErrNoCredential):
+		// 400, and the message names the fix: an admin stores an OpenRouter key
+		// in the workspace's credentials. Nothing here is secret — the absence
+		// of a key is visible to anyone who tries.
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"error": "this workspace has no " + ai.CredentialProvider + " API key; add one in credentials",
+		})
+
+	case errors.Is(err, ai.ErrProvider), errors.Is(err, ai.ErrBadGraph):
+		// 502: the request was fine and we were fine. Something upstream was
+		// not, and the caller's only sensible move is to try again.
+		zerolog.Ctx(r.Context()).Warn().Err(err).Msg("model provider failed")
+		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
 
 	case errors.Is(err, workspace.ErrForbidden):
 		// A member whose role is too low is a different case: they already
