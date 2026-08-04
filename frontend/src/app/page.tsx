@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { Capabilities } from "@/components/capabilities";
 import { PhoenixGradient } from "@/components/gradient";
 import { HeroGraph } from "@/components/hero-graph";
+import { RunRecord } from "@/components/run-record";
 import { Reveal } from "@/components/reveal";
 import { Badge, Button, Eyebrow, Splash, Wordmark } from "@/components/ui";
 import { useSession } from "@/lib/auth-client";
@@ -98,21 +99,30 @@ export default function Home() {
         <Capabilities />
       </section>
 
-      {/* The dark counterweight. One per page, at the bottom, as the closer. */}
+      {/* The dark counterweight. One per page, at the bottom, as the closer.
+          Split, because the claim it makes is about a record — so it shows one
+          rather than leaving half the band empty. */}
       <section className="bg-charcoal">
-        <div className="mx-auto flex max-w-[1200px] flex-col items-start gap-8 px-6 py-24">
-          <h2 className="max-w-2xl text-heading-sm text-canvas-white sm:text-heading">
-            Deterministic runs. Nothing hidden.
-          </h2>
-          <p className="max-w-md text-body-sm leading-relaxed text-stone">
-            A saved workflow executes the same way until you change it. Every run keeps a copy of the
-            graph it executed, so what you see later is what actually happened.
-          </p>
-          <Link href="/signup">
-            <Button variant="neutral" className="h-12 px-6">
-              Start building
-            </Button>
-          </Link>
+        <div className="mx-auto grid max-w-[1200px] items-center gap-12 px-6 py-24 lg:grid-cols-2 lg:gap-16">
+          <Reveal className="flex flex-col items-start gap-8">
+            <h2 className="max-w-xl text-heading-sm text-canvas-white sm:text-heading">
+              Deterministic runs. Nothing hidden.
+            </h2>
+            <p className="max-w-md text-body-sm leading-relaxed text-stone">
+              A saved workflow executes the same way until you change it. Every run keeps a copy of
+              the graph it executed, so what you see later is what actually happened — including
+              which node failed and what it said.
+            </p>
+            <Link href="/signup">
+              <Button variant="neutral" className="h-12 px-6">
+                Start building
+              </Button>
+            </Link>
+          </Reveal>
+
+          <Reveal delay={120}>
+            <RunRecord />
+          </Reveal>
         </div>
       </section>
     </main>

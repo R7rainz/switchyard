@@ -1,10 +1,13 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Play, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { GraphPreview } from "@/components/graph-preview";
+import { RecentRuns } from "@/components/recent-runs";
+import { RunStatus } from "@/components/run-status";
 import { Modal } from "@/components/modal";
 import {
   Badge,
@@ -19,10 +22,13 @@ import {
 } from "@/components/ui";
 import { apiError, type Workflow } from "@/lib/api";
 import { paletteFor } from "@/lib/categories";
+import { relativeTime } from "@/lib/time";
 import {
   emptyGraph,
   useCreateWorkflow,
   useDeleteWorkflow,
+  useExecutions,
+  useStartExecution,
   useWorkflows,
   useWorkspace,
 } from "@/lib/queries";
@@ -91,6 +97,8 @@ export default function WorkflowsPage() {
         </div>
       )}
 
+      <RecentRuns workspaceId={workspace?.id} />
+
       <CreateWorkflowModal
         open={creating}
         onClose={() => setCreating(false)}
@@ -109,7 +117,14 @@ export default function WorkflowsPage() {
  */
 function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspaceId: string }) {
   const remove = useDeleteWorkflow(workspaceId);
+  const start = useStartExecution(workspaceId);
   const [confirming, setConfirming] = useState(false);
+
+  // This workflow's own runs, out of the same list the strip below shows, so
+  // the card and the strip cannot disagree and there is no second request.
+  const { data: allRuns } = useExecutions(workspaceId);
+  const lastRun = allRuns?.find((run) => run.workflowId === workflow.id);
+  const runnable = workflow.graph.nodes.length > 0;
 
   // Which node families this workflow uses, in first-seen order, deduped.
   const families = [...new Map(
@@ -125,9 +140,13 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
         {/* The graph, not a node count. Two workflows called "deploy" read
             identically by name and differently by shape, and recognising one
             is the entire job of this screen. */}
-        <div className="rounded-t-xl bg-cream-wash px-4 py-4">
+        <Link
+          href={`/workflows/${workflow.id}`}
+          aria-label={`Open ${workflow.name}`}
+          className="block rounded-t-xl bg-cream-wash px-4 py-4 hover:bg-pearl"
+        >
           <GraphPreview graph={workflow.graph} className="h-24 w-full" />
-        </div>
+        </Link>
 
         <div className="flex items-start justify-between gap-3 px-5">
           {/* Not a link yet: the page this opens is the builder, and a card
@@ -151,7 +170,7 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
           </p>
         )}
 
-        <div className="mt-auto flex flex-wrap items-center gap-2 px-5 pb-5">
+        <div className="flex flex-wrap items-center gap-2 px-5">
           {/* One badge per node family present, in the colour that family
               wears everywhere else. An empty draft says so plainly. */}
           {families.length > 0 ? (
@@ -164,6 +183,27 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
             <Badge>Empty draft</Badge>
           )}
           <Eyebrow className="ml-auto">{relativeTime(workflow.updatedAt)}</Eyebrow>
+        </div>
+
+        <div className="mt-auto flex items-center gap-3 border-t border-hairline px-5 py-3">
+          {lastRun ? (
+            <RunStatus status={lastRun.status} />
+          ) : (
+            <span className="text-caption text-ash">Never run</span>
+          )}
+
+          <Button
+            variant="neutral"
+            className="ml-auto h-8 px-3"
+            // An empty draft has no trigger, so the engine would reject it at
+            // Start. Saying so here beats a 400 the user has to interpret.
+            title={runnable ? undefined : "Add a trigger before running this"}
+            disabled={!runnable || start.isPending}
+            onClick={() => start.mutate(workflow.id)}
+          >
+            <Play size={13} strokeWidth={2} />
+            {start.isPending ? "Starting…" : "Run"}
+          </Button>
         </div>
       </Card>
 
@@ -272,33 +312,4 @@ function WorkflowListSkeleton() {
       ))}
     </ul>
   );
-}
-
-/**
- * Rendered in the browser from an absolute timestamp the server sent, so every
- * client agrees on the instant and disagrees only about the wording.
- */
-function relativeTime(iso: string): string {
-  const seconds = Math.round((Date.now() - new Date(iso).getTime()) / 1000);
-  const steps: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["second", 60],
-    ["minute", 60],
-    ["hour", 24],
-    ["day", 7],
-    ["week", 4.35],
-    ["month", 12],
-    ["year", Infinity],
-  ];
-
-  let value = seconds;
-  for (const [unit, size] of steps) {
-    if (Math.abs(value) < size) {
-      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
-        -Math.round(value),
-        unit,
-      );
-    }
-    value /= size;
-  }
-  return "";
 }

@@ -218,3 +218,64 @@ export async function watchExecution(
 
   return () => socket.close();
 }
+
+/**
+ * A run. The graph snapshot is deliberately absent from the list response — it
+ * is the largest field by far, and a dashboard draws a row, not a canvas.
+ */
+export type Execution = {
+  id: string;
+  workflowId?: string;
+  status: ExecutionStatus;
+  trigger: string;
+  error?: string;
+  startedBy?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** Computed server-side, so every client agrees on what a run took. */
+  durationMs?: number;
+};
+
+/** What one node did during one run. */
+export type NodeRun = {
+  nodeId: string;
+  status: ExecutionStatus;
+  output?: unknown;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+};
+
+export const executions = {
+  /** Newest first. An empty workflowId means every run in the workspace. */
+  list: (workspaceId: string, options: { workflowId?: string; limit?: number } = {}) =>
+    api
+      .get<{ executions: Execution[] }>(`/api/workspaces/${workspaceId}/executions`, {
+        params: { workflowId: options.workflowId, limit: options.limit },
+      })
+      .then((r) => r.data.executions),
+
+  /**
+   * One run with the graph it executed and what each node did.
+   *
+   * Fetched *after* the socket is open, never before: nothing is replayed, so a
+   * run that finishes in the gap would leave the canvas showing RUNNING with no
+   * event left to correct it.
+   */
+  get: (workspaceId: string, id: string) =>
+    api
+      .get<{ execution: Execution; graph: Graph; nodes: NodeRun[] }>(
+        `/api/workspaces/${workspaceId}/executions/${id}`,
+      )
+      .then((r) => r.data),
+
+  start: (workspaceId: string, workflowId: string, input?: unknown) =>
+    api
+      .post<Execution>(
+        `/api/workspaces/${workspaceId}/workflows/${workflowId}/executions`,
+        input === undefined ? undefined : { input },
+      )
+      .then((r) => r.data),
+};

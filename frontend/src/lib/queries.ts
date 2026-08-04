@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { workflows, workspaces, type Graph, type Workflow } from "./api";
+import { executions, workflows, workspaces, type Graph, type Workflow } from "./api";
 
 /**
  * Query keys in one place, so an invalidation and a fetch cannot disagree about
@@ -12,6 +12,7 @@ export const keys = {
   workspaces: ["workspaces"] as const,
   workflows: (workspaceId: string) => ["workflows", workspaceId] as const,
   workflow: (workspaceId: string, id: string) => ["workflow", workspaceId, id] as const,
+  executions: (workspaceId: string) => ["executions", workspaceId] as const,
 };
 
 /**
@@ -66,3 +67,30 @@ export function useDeleteWorkflow(workspaceId: string | undefined) {
 export const emptyGraph: Graph = { nodes: [], edges: [] };
 
 export type { Workflow };
+
+/**
+ * A workspace's runs, newest first.
+ *
+ * Polled rather than streamed. The WebSocket carries one execution's events and
+ * needs an id to subscribe to; a dashboard is watching for runs it has not
+ * heard of yet, which is a different question. A slow interval answers it
+ * without opening a socket per row.
+ */
+export function useExecutions(workspaceId: string | undefined, limit = 8) {
+  return useQuery({
+    queryKey: [...keys.executions(workspaceId ?? ""), limit],
+    queryFn: () => executions.list(workspaceId!, { limit }),
+    enabled: Boolean(workspaceId),
+    refetchInterval: 5000,
+  });
+}
+
+export function useStartExecution(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (workflowId: string) => executions.start(workspaceId!, workflowId),
+    // A run appears in the list the moment it is accepted, so the strip shows
+    // it PENDING rather than staying empty until the next poll.
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.executions(workspaceId ?? "") }),
+  });
+}
