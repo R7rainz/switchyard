@@ -132,7 +132,14 @@ func (s *Service) run(ctx context.Context, run Execution) {
 func (s *Service) finish(ctx context.Context, id string, status Status, message string) {
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	_ = s.store.Finish(write, id, status, message, s.now())
+	if err := s.store.Finish(write, id, status, message, s.now()); err != nil {
+		// Not announced, on purpose. Saying SUCCEEDED for a write that did not
+		// land leaves the watcher showing one thing while a refresh shows
+		// another, and later a third once Reclaim catches the row. Silence is
+		// honest: the client keeps showing what the database agrees with.
+		zerolog.Ctx(ctx).Error().Err(err).Str("execution_id", id).Msg("could not finish execution")
+		return
+	}
 	s.publish(Event{Type: EventExecution, ExecutionID: id, Status: status, Error: message})
 }
 
@@ -297,7 +304,16 @@ func (s *Service) dispatch(ctx context.Context, run Execution, node workflow.Nod
 func (s *Service) record(ctx context.Context, row NodeRun) {
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	_ = s.store.SaveNodeRun(write, row)
+	if err := s.store.SaveNodeRun(write, row); err != nil {
+		// The node already did its work, so a lost record is a gap rather than
+		// a failure and the run carries on. It is not announced either: an
+		// event for a row that is not there would show the viewer a node the
+		// execution's own REST response does not have.
+		zerolog.Ctx(ctx).Warn().Err(err).
+			Str("execution_id", row.ExecutionID).Str("node_id", row.NodeID).
+			Msg("could not record node run")
+		return
+	}
 
 	// Every node transition passes through here — RUNNING, then its outcome,
 	// and SKIPPED for a branch not taken — so this one call covers the lot.

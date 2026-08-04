@@ -602,12 +602,26 @@ workflow, so a browser somebody closed the lid on must not be able to hold a
 run up. A client more than `sendBuffer` events behind is **dropped**, and
 reconnects to state it re-reads over REST.
 
-**Events fire after the row is written, never before** — a watcher must not see
-RUNNING for a run the database does not agree has started. `record` covers every
-node transition (RUNNING, its outcome, and SKIPPED), so one call site does the
-lot. Output over 64 KiB is dropped from the event with `outputTruncated`: a
-megabyte written once to a row is a different budget from a megabyte buffered
-per watcher.
+**Nothing is announced that was not written.** Events fire after the row lands
+and only if it landed — announcing a status the database never took leaves the
+watcher showing one thing while a refresh shows another, and later a third once
+`Reclaim` catches the row. Silence is the honest outcome: the client keeps
+showing what the database agrees with. `record` covers every node transition
+(RUNNING, its outcome, and SKIPPED), so one call site does the lot. Output over
+64 KiB is dropped from the event with `outputTruncated`: a megabyte written once
+to a row is a different budget from a megabyte buffered per watcher.
+
+**`Cancel` announces its own outcome when no engine will.** Cancelling a run
+this process is not running finishes the row directly, so nothing else is going
+to tell a watcher — they would sit on RUNNING for a run the database has
+cancelled.
+
+**`Serve` subscribes before the handshake, not after.** `Accept` writes the 101
+that releases the client, so subscribing afterwards races it — the client
+believes it is connected while the hub has never heard of it. Events published
+in that window go nowhere, which is the exact gap the ordering below exists to
+close. `TestSubscribedBeforeTheHandshakeCompletes` fails under `-race -count 200`
+if it is ever moved back.
 
 **Connect before you fetch. This is the contract.** Nothing is replayed.
 Connect first and the fetch returns either a finished run or a running one

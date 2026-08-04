@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -130,6 +131,18 @@ const bearerSubprotocol = "bearer"
 // RequirePermission the REST routes use, and the caller has already confirmed
 // the subscription is one this user may have.
 func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, topic string) error {
+	// Subscribed before the handshake, not after.
+	//
+	// Accept writes the 101 that releases the client, so subscribing afterwards
+	// races it: the client believes it is connected while the hub has never
+	// heard of it, and anything published in that window goes nowhere. That is
+	// the exact gap connect-before-you-fetch exists to close, so leaving it open
+	// would make the contract a lie. Events arriving before the loop below runs
+	// wait in the buffer.
+	c := &client{send: make(chan []byte, sendBuffer), closed: make(chan struct{})}
+	h.add(topic, c)
+	defer h.remove(topic, c)
+
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols:   []string{bearerSubprotocol},
 		OriginPatterns: h.origins,
@@ -144,10 +157,6 @@ func (h *Hub) Serve(w http.ResponseWriter, r *http.Request, topic string) error 
 	// read for close and pong frames to be processed. CloseRead does that and
 	// hands back a context that ends when the peer goes away.
 	ctx := conn.CloseRead(r.Context())
-
-	c := &client{send: make(chan []byte, sendBuffer), closed: make(chan struct{})}
-	h.add(topic, c)
-	defer h.remove(topic, c)
 
 	ping := time.NewTicker(pingEvery)
 	defer ping.Stop()
@@ -188,11 +197,9 @@ func writeWithin(ctx context.Context, conn *websocket.Conn, message []byte) erro
 
 // stripScheme turns a URL into the host pattern OriginPatterns wants, which
 // matches against the Origin header's host rather than the whole URL.
-func stripScheme(url string) string {
-	for _, prefix := range []string{"https://", "http://"} {
-		if len(url) > len(prefix) && url[:len(prefix)] == prefix {
-			return url[len(prefix):]
-		}
+func stripScheme(raw string) string {
+	if parsed, err := url.Parse(raw); err == nil && parsed.Host != "" {
+		return parsed.Host
 	}
-	return url
+	return raw
 }

@@ -250,7 +250,14 @@ func (s *Service) Cancel(ctx context.Context, workspaceID, id string) error {
 		// The row says running but nothing here is running it, which means the
 		// process that was died. Finish it rather than leaving a row that never
 		// resolves.
-		return s.store.Finish(ctx, id, StatusCancelled, "cancelled", s.now())
+		if err := s.store.Finish(ctx, id, StatusCancelled, "cancelled", s.now()); err != nil {
+			return err
+		}
+		// Announced here because no engine will: this run belongs to no
+		// goroutine, so nothing else is going to tell a watcher it is over, and
+		// they would sit on RUNNING for a run the database has cancelled.
+		s.publish(Event{Type: EventExecution, ExecutionID: id, Status: StatusCancelled, Error: "cancelled"})
+		return nil
 	}
 	return nil
 }

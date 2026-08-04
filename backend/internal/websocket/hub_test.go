@@ -235,3 +235,27 @@ func TestStripScheme(t *testing.T) {
 		}
 	}
 }
+
+// A client is subscribed by the time Dial returns.
+//
+// Subscribing after the handshake leaves a window where the client believes it
+// is connected and the hub has never heard of it — anything published in that
+// window goes nowhere. That is precisely the gap the connect-before-you-fetch
+// ordering exists to close, so leaving it open here would make that contract a
+// lie.
+func TestSubscribedBeforeTheHandshakeCompletes(t *testing.T) {
+	hub := NewHub("")
+	url := serveHub(t, hub, "run:1", 30*time.Second)
+
+	conn := dial(t, url)
+
+	// No polling: if this needs a retry loop, the window is real.
+	if watching := hub.Subscribers("run:1"); watching != 1 {
+		t.Fatalf("Subscribers = %d immediately after Dial, want 1", watching)
+	}
+
+	hub.Publish("run:1", map[string]any{"status": "RUNNING"})
+	if event := readEvent(t, conn); event["status"] != "RUNNING" {
+		t.Fatalf("event = %v", event)
+	}
+}
