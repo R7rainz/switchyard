@@ -5,6 +5,7 @@ import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { paletteFor } from "@/lib/categories";
 import { conditionHandles, specFor } from "@/lib/node-types";
 import { cx } from "@/components/ui";
+import { useNodeStatus } from "./run-state";
 
 /**
  * Every node type renders through this one component.
@@ -19,11 +20,24 @@ export function BuilderNode({ id, type, data, selected }: NodeProps) {
   const label = typeof data?.label === "string" && data.label ? data.label : (spec?.label ?? type);
   const isTrigger = type.startsWith("trigger.");
 
+  // What this node is doing in the run being watched, if any. It comes from a
+  // context rather than from node.data, because data is what autosave writes —
+  // a status stored there would become part of the workflow's definition.
+  const run = useNodeStatus(id);
+
   return (
     <div
       className={cx(
-        "w-[200px] overflow-hidden rounded-xl border bg-canvas-white",
-        selected ? "border-ink" : "border-hairline",
+        "w-[200px] overflow-hidden rounded-xl border bg-canvas-white transition-[border-color,opacity,box-shadow] duration-300",
+        run === "RUNNING" && "border-phoenix-orange shadow-[0_0_0_3px_rgba(232,64,13,0.15)]",
+        run === "SUCCEEDED" && "border-mint-green",
+        run === "FAILED" && "border-phoenix-orange",
+        // Dimmed, not hidden. An untaken branch has to look different from a
+        // step that is still waiting — that distinction is why the engine
+        // records SKIPPED at all.
+        run === "SKIPPED" && "opacity-40",
+        !run && (selected ? "border-ink" : "border-hairline"),
+        run && selected && "ring-1 ring-ink",
       )}
     >
       {/* A trigger has nothing before it — the engine rejects an edge into one,
@@ -39,7 +53,21 @@ export function BuilderNode({ id, type, data, selected }: NodeProps) {
       <div className="h-1.5" style={{ background: palette.hex }} />
 
       <div className="flex flex-col gap-1 px-3 py-2.5">
-        <span className="text-eyebrow uppercase tracking-[0.3px] text-ash">{palette.label}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-eyebrow uppercase tracking-[0.3px] text-ash">{palette.label}</span>
+          {run && (
+            <span
+              aria-hidden
+              className={cx(
+                "size-1.5 rounded-full",
+                run === "RUNNING" && "animate-pulse bg-phoenix-orange",
+                run === "SUCCEEDED" && "bg-mint-green",
+                run === "FAILED" && "bg-phoenix-orange",
+                (run === "SKIPPED" || run === "PENDING" || run === "CANCELLED") && "bg-stone",
+              )}
+            />
+          )}
+        </span>
         <span className="truncate text-body-sm text-ink">{label}</span>
         {/* The id, because every template reference is written against it. */}
         <span className="truncate text-[10px] text-stone">{id}</span>

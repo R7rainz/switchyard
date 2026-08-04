@@ -10,6 +10,8 @@ import {
   type Connection,
   type Edge,
   type Node,
+  type OnEdgesChange,
+  type OnNodesChange,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -20,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { nodeTypes } from "@/components/builder/node";
 import { Inspector, Palette, SaveState } from "@/components/builder/panels";
+import { RunProvider, useRunState } from "@/components/builder/run-state";
 import { RunStatus } from "@/components/run-status";
 import { Button, ErrorNote, Skeleton, Wordmark } from "@/components/ui";
 import {
@@ -86,6 +89,11 @@ function Builder({
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
 
+  // The run this canvas is watching. Set when Run is pressed, and picked up
+  // from the newest run on load so reopening a workflow mid-run shows it.
+  const [watchingId, setWatchingId] = useState<string | null>(null);
+  const runId = watchingId ?? (lastRun && lastRun.status === "RUNNING" ? lastRun.id : null);
+
   const addNode = useCallback(
     (type: string) => {
       setNodes((current) => {
@@ -147,18 +155,21 @@ function Builder({
           // at Start. Saying so here beats a 400 the user has to interpret.
           disabled={nodes.length === 0 || start.isPending || dirty || saving}
           title={dirty || saving ? "Saving…" : undefined}
-          onClick={() => start.mutate(id)}
+          onClick={() =>
+            start.mutate(id, { onSuccess: (run) => setWatchingId(run.id) })
+          }
         >
           <Play size={13} strokeWidth={2} />
           Run
         </Button>
       </header>
 
+      <RunProvider workspaceId={workspaceId} executionId={runId}>
       <div className="flex min-h-0 flex-1">
         <Palette onAdd={addNode} />
 
         <div className="min-w-0 flex-1">
-          <ReactFlow
+          <FlowCanvas
             nodes={nodes}
             edges={edges}
             onNodesChange={onNodesChange}
@@ -166,14 +177,7 @@ function Builder({
             onConnect={(connection: Connection) =>
               setEdges((current) => addEdge({ ...connection, id: edgeId(current) }, current))
             }
-            nodeTypes={nodeTypes}
-            fitView
-            proOptions={{ hideAttribution: false }}
-            className="bg-cream-wash"
-          >
-            <Background color="#b1b1af" gap={20} size={1} />
-            <Controls showInteractive={false} />
-          </ReactFlow>
+          />
         </div>
 
         <Inspector
@@ -182,7 +186,70 @@ function Builder({
           onDelete={deleteNode}
         />
       </div>
+      </RunProvider>
     </div>
+  );
+}
+
+/**
+ * The canvas, with the run drawn over it.
+ *
+ * Edge state is derived here rather than stored: an edge whose source has
+ * finished is one the run has crossed, and marking that on the edges array
+ * would mean autosave had a reason to fire every time a node completed.
+ */
+function FlowCanvas({
+  nodes,
+  edges,
+  onNodesChange,
+  onEdgesChange,
+  onConnect,
+}: {
+  nodes: Node[];
+  edges: Edge[];
+  onNodesChange: OnNodesChange<Node>;
+  onEdgesChange: OnEdgesChange<Edge>;
+  onConnect: (connection: Connection) => void;
+}) {
+  const { nodes: statuses } = useRunState();
+
+  const drawn = useMemo(
+    () =>
+      edges.map((edge) => {
+        const from = statuses[edge.source];
+        const to = statuses[edge.target];
+        // Crossed: the source finished and the target is doing something. An
+        // edge into a skipped node is the branch that was not taken.
+        const taken = from === "SUCCEEDED" && to && to !== "SKIPPED";
+        const untaken = to === "SKIPPED";
+        return {
+          ...edge,
+          animated: to === "RUNNING",
+          style: {
+            stroke: untaken ? "#b1b1af" : taken ? "#8dd087" : undefined,
+            strokeWidth: taken ? 2 : undefined,
+            strokeDasharray: untaken ? "4 4" : undefined,
+            opacity: untaken ? 0.5 : 1,
+          },
+        };
+      }),
+    [edges, statuses],
+  );
+
+  return (
+    <ReactFlow
+      nodes={nodes}
+      edges={drawn}
+      onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
+      onConnect={onConnect}
+      nodeTypes={nodeTypes}
+      fitView
+      className="bg-cream-wash"
+    >
+      <Background color="#b1b1af" gap={20} size={1} />
+      <Controls showInteractive={false} />
+    </ReactFlow>
   );
 }
 

@@ -237,6 +237,17 @@ export type Execution = {
   durationMs?: number;
 };
 
+/** What one node did during one run. */
+export type NodeRun = {
+  nodeId: string;
+  status: ExecutionStatus;
+  output?: unknown;
+  error?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  durationMs?: number;
+};
+
 export const executions = {
   /** Newest first. An empty workflowId means every run in the workspace. */
   list: (workspaceId: string, options: { workflowId?: string; limit?: number } = {}) =>
@@ -245,6 +256,20 @@ export const executions = {
         params: { workflowId: options.workflowId, limit: options.limit },
       })
       .then((r) => r.data.executions),
+
+  /**
+   * One run with the graph it executed and what each node did.
+   *
+   * Fetched *after* the socket is open, never before: nothing is replayed, so a
+   * run that finishes in the gap would leave the canvas showing RUNNING with no
+   * event left to correct it.
+   */
+  get: (workspaceId: string, id: string) =>
+    api
+      .get<{ execution: Execution; graph: Graph; nodes: NodeRun[] }>(
+        `/api/workspaces/${workspaceId}/executions/${id}`,
+      )
+      .then((r) => r.data),
 
   start: (workspaceId: string, workflowId: string, input?: unknown) =>
     api
