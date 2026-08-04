@@ -196,8 +196,8 @@ export function Skeleton({ className }: { className?: string }) {
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-2", className)}>
-      <Logo size={18} />
-      <span className="text-body-sm tracking-[-0.2px] text-ink">Switchyard</span>
+      <Logo size={30} />
+      <span className="text-body tracking-[-0.4px] text-ink">Switchyard</span>
     </span>
   );
 }
