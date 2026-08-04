@@ -14,7 +14,7 @@ import (
 //
 // Everything else belongs to the package that owns the integration — GitHub
 // nodes in internal/github, Slack in internal/slack — because those carry an
-// SDK, a token, and an API to keep up with. These two carry none of that, and a
+// SDK, a token, and an API to keep up with. These carry none of that, and a
 // package holding one function is not a boundary, it is ceremony.
 func Builtin(client *http.Client) Registry {
 	if client == nil {
@@ -25,6 +25,7 @@ func Builtin(client *http.Client) Registry {
 		"trigger.webhook":  RunnerFunc(runTrigger),
 		"trigger.schedule": RunnerFunc(runTrigger),
 		"logic.condition":  RunnerFunc(runCondition),
+		"variable.set":     RunnerFunc(runSetVariable),
 		"http.request":     &httpRunner{client: client},
 	}
 }
@@ -78,6 +79,40 @@ func truthy(value any) bool {
 		}
 	}
 	return false
+}
+
+// runSetVariable names values for the nodes downstream of it.
+//
+// It computes nothing: the template layer has already substituted the node's
+// data, so this only decides what the node's output is. The point is a name — a
+// later node reads {{ .nodes.pr.number }} instead of repeating the expression
+// that produced it, and the value is visible on the canvas and on the run,
+// which is the difference between a workflow you can read and one you cannot.
+func runSetVariable(_ context.Context, in Input) (Result, error) {
+	var data struct {
+		Values json.RawMessage `json:"values"`
+	}
+	if len(in.Data) > 0 {
+		if err := json.Unmarshal(in.Data, &data); err != nil {
+			return Result{}, fmt.Errorf("variable node data: %w", err)
+		}
+	}
+	if len(data.Values) == 0 {
+		return Result{}, fmt.Errorf("variable node needs a values object")
+	}
+
+	// It has to be an object, because the whole purpose is to be reached into
+	// as .nodes.<id>.<name>. A list or a bare string would fail later, in a
+	// template, with a message about the node that referred to it rather than
+	// the node that is wrong.
+	var named map[string]any
+	if err := json.Unmarshal(data.Values, &named); err != nil {
+		return Result{}, fmt.Errorf("variable node values must be an object of name/value pairs: %w", err)
+	}
+
+	// The output is the values themselves rather than a wrapper, so a reference
+	// is .nodes.<id>.<name> — the same shape as every other node's output.
+	return Result{Output: data.Values}, nil
 }
 
 // httpRunner calls an HTTP endpoint.

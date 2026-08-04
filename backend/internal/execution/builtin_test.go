@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/R7rainz/switchyard/backend/internal/workflow"
 )
 
 func TestInterpolate(t *testing.T) {
@@ -183,5 +185,93 @@ func TestCondition(t *testing.T) {
 		if result.Branch != want {
 			t.Errorf("%s: branch = %q, want %q", data, result.Branch, want)
 		}
+	}
+}
+
+// A variable node names values for the nodes after it, so a later reference is
+// .nodes.<id>.<name> — the same shape as every other node's output, rather than
+// a wrapper only this node type has.
+func TestSetVariable(t *testing.T) {
+	result, err := runSetVariable(t.Context(), Input{
+		Data: json.RawMessage(`{"label":"Facts","values":{"repo":"switchyard","number":42}}`),
+	})
+	if err != nil {
+		t.Fatalf("runSetVariable: %v", err)
+	}
+
+	var named map[string]any
+	if err := json.Unmarshal(result.Output, &named); err != nil {
+		t.Fatalf("output is not an object: %s", result.Output)
+	}
+	if named["repo"] != "switchyard" || named["number"] != float64(42) {
+		t.Fatalf("output = %s", result.Output)
+	}
+	// The canvas label is not a variable.
+	if _, leaked := named["label"]; leaked {
+		t.Fatalf("the node's label leaked into its output: %s", result.Output)
+	}
+	if result.Branch != "" {
+		t.Fatalf("a variable node picked a branch: %q", result.Branch)
+	}
+}
+
+// Values that are not an object would fail later, inside a template, naming the
+// node that referred to them rather than the node that is wrong.
+func TestSetVariableRejectsWhatCannotBeNamed(t *testing.T) {
+	cases := map[string]string{
+		"no values at all": `{"label":"Facts"}`,
+		"empty data":       ``,
+		"a list":           `{"values":["a","b"]}`,
+		"a bare string":    `{"values":"switchyard"}`,
+		"a number":         `{"values":42}`,
+	}
+	for name, data := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := runSetVariable(t.Context(), Input{Data: json.RawMessage(data)}); err == nil {
+				t.Fatal("accepted values that cannot be reached into")
+			}
+		})
+	}
+}
+
+// The whole point: a later node reads a value by the name this one gave it.
+func TestVariableFlowsIntoTheNextNode(t *testing.T) {
+	graph := workflow.Graph{
+		Nodes: []workflow.Node{
+			node("t", "trigger.manual", ""),
+			node("v", "variable.set", `{"values":{"repo":"switchyard"}}`),
+			node("a", "http.request", `{"url":"https://example.com/{{ .nodes.v.repo }}"}`),
+		},
+		Edges: []workflow.Edge{
+			{ID: "e1", Source: "t", Target: "v"},
+			{ID: "e2", Source: "v", Target: "a"},
+		},
+	}
+
+	// A local runner rather than the shared recorder: what matters here is the
+	// data the node was handed after interpolation, which is the one thing the
+	// recorder does not keep.
+	var seen string
+	runners := Registry{
+		"trigger.manual": RunnerFunc(runTrigger),
+		"variable.set":   RunnerFunc(runSetVariable),
+		"http.request": RunnerFunc(func(_ context.Context, in Input) (Result, error) {
+			seen = string(in.Data)
+			return Result{Output: json.RawMessage(`{}`)}, nil
+		}),
+	}
+	store := NewMemoryStore()
+	svc := NewService(store, stubWorkflows{graph: graph}, runners, Options{})
+
+	run, err := svc.Start(t.Context(), "ws", "wf", "alice", TriggerManual, nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := await(t, store, "ws", run.ID); got.Status != StatusSucceeded {
+		t.Fatalf("status = %s: %s", got.Status, got.Error)
+	}
+
+	if want := "https://example.com/switchyard"; !strings.Contains(seen, want) {
+		t.Fatalf("the variable did not reach the next node: %q", seen)
 	}
 }
