@@ -585,6 +585,60 @@ unnoticed. `openRouterBackstop` is 2 minutes and exists only so a caller that
 forgets a deadline cannot hang forever. `DefaultModel` is one constant; a
 workflow that pinned a model keeps it.
 
+### Live execution events
+
+**`internal/websocket` is a transport and holds nothing worth reading.** The
+rows are the record; this is a notification. That is what lets a slow client be
+dropped rather than waited for. `github.com/coder/websocket` is the second
+direct dependency after chi — it has none of its own.
+
+**Neither package imports the other.** `execution` declares a one-method
+`Publisher` it announces progress to; `api` declares a one-method `EventStream`
+it serves. `websocket.Hub` satisfies both, and `main.go` is the only place that
+knows they are the same object.
+
+**`Publish` never blocks and never fails.** The engine calls it while running a
+workflow, so a browser somebody closed the lid on must not be able to hold a
+run up. A client more than `sendBuffer` events behind is **dropped**, and
+reconnects to state it re-reads over REST.
+
+**Events fire after the row is written, never before** — a watcher must not see
+RUNNING for a run the database does not agree has started. `record` covers every
+node transition (RUNNING, its outcome, and SKIPPED), so one call site does the
+lot. Output over 64 KiB is dropped from the event with `outputTruncated`: a
+megabyte written once to a row is a different budget from a megabyte buffered
+per watcher.
+
+**Connect before you fetch. This is the contract.** Nothing is replayed.
+Connect first and the fetch returns either a finished run or a running one
+whose remaining events all arrive; fetch first and a run that ends in the gap is
+a page showing RUNNING with nothing left to correct it. A replay buffer would
+remove the ordering requirement and add a second copy of state that can
+disagree with the rows.
+
+**The token rides in `Sec-WebSocket-Protocol`, not a query parameter.** The
+browser's WebSocket constructor cannot set headers, and a URL is the one place
+a bearer token must not go — URLs are what access logs, proxies, and Referer
+headers record. `bearerToken` falls back to `bearer, <token>` in that header, so
+there is one authentication path rather than a second one for WebSockets to get
+wrong.
+
+**The handler looks the execution up before subscribing, and that lookup is the
+authorization.** `RequirePermission` checks the `{workspaceID}` in the URL and
+knows nothing about the `{executionID}` beside it, so without it read access to
+one workspace would be read access to every run on the server.
+
+`OriginPatterns` comes from `appURL` for the same reason CORS does — the
+frontend is a different origin, and `Accept` rejects cross-origin by default.
+Route: `GET .../executions/{executionID}/events`, gated on `execution:read`.
+
+Two things worth knowing when testing: `net/http` clears a connection's
+deadlines on hijack, so a stream outlives the server's `WriteTimeout` — the
+hub's tests set a real one, because on a server without it that test passes
+while proving nothing. And a client that stops calling `Read` still has a kernel
+receive buffer, so the drop path cannot be reached end to end with small
+messages; it is tested against the hub directly.
+
 ### The router takes a struct
 
 `api.NewRouter(api.Deps{...})`, not a parameter list. Five same-typed service
