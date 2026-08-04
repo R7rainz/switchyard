@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { AuthFields, AuthLayout } from "@/components/auth-form";
 import { signIn } from "@/lib/auth-client";
 
 export default function LoginPage() {
@@ -27,59 +28,26 @@ export default function LoginPage() {
       setError(result.error.message ?? "Sign in failed");
       return;
     }
+    router.push("/workflows");
     // refresh() so any server component re-reads the new session cookie.
-    router.push("/");
     router.refresh();
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-6 p-6">
-      <h1 className="text-2xl font-semibold">Sign in to Switchyard</h1>
-
-      <form onSubmit={onSubmit} className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1 text-sm">
-          Email
-          <input
-            name="email"
-            type="email"
-            required
-            autoComplete="email"
-            className="rounded border border-gray-400 px-3 py-2"
-          />
-        </label>
-
-        <label className="flex flex-col gap-1 text-sm">
-          Password
-          <input
-            name="password"
-            type="password"
-            required
-            autoComplete="current-password"
-            className="rounded border border-gray-400 px-3 py-2"
-          />
-        </label>
-
-        {error && (
-          <p role="alert" className="rounded border border-red-500 px-3 py-2 text-sm text-red-600">
-            {error}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-        >
-          {pending ? "Signing in…" : "Sign in"}
-        </button>
+    <AuthLayout
+      title="Sign in"
+      footer={
+        <>
+          No account?{" "}
+          <Link href="/signup" className="text-bone hover:text-chalk">
+            Create one
+          </Link>
+        </>
+      }
+    >
+      <form onSubmit={onSubmit}>
+        <AuthFields mode="login" error={error} pending={pending} submitLabel="Sign in" />
       </form>
-
-      <p className="text-sm">
-        No account?{" "}
-        <Link href="/signup" className="underline">
-          Sign up
-        </Link>
-      </p>
-    </main>
+    </AuthLayout>
   );
 }
