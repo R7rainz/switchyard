@@ -17,6 +17,7 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/config"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
+	"github.com/R7rainz/switchyard/backend/internal/execution"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 	"github.com/R7rainz/switchyard/backend/migrations"
@@ -82,12 +83,30 @@ func main() {
 	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
 	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
 
+	// Runners the engine knows about. The built-ins need nothing but the
+	// standard library; GitHub, Slack, and AI nodes register themselves here as
+	// their packages arrive.
+	runners := execution.Builtin(nil)
+	executions := execution.NewService(
+		execution.NewPostgresStore(pool), workflows, runners, execution.Options{})
+
+	// A process that died mid-run left rows nothing will ever finish. Doing
+	// this before the server listens means no request can ever see a run that
+	// claims to be in progress inside a process that has never heard of it.
+	reclaimed, err := executions.Reclaim(startupCtx)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("could not reclaim interrupted executions")
+	}
+	if reclaimed > 0 {
+		logger.Warn().Int("count", reclaimed).Msg("failed executions interrupted by a restart")
+	}
+
 	// The issuer is the frontend's base URL, so it is also where an invite link
 	// has to send someone: accepting needs a signed-in user, which only the
 	// frontend can produce.
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: api.NewRouter(verifier, logger, workspaces, credentials, workflows, cfg.AuthIssuer),
+		Handler: api.NewRouter(verifier, logger, workspaces, credentials, workflows, executions, cfg.AuthIssuer),
 		// Bound how long a connection can sit half-open holding a slot.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

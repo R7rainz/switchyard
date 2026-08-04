@@ -9,6 +9,7 @@ import (
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
+	"github.com/R7rainz/switchyard/backend/internal/execution"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
@@ -61,7 +62,8 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		errors.Is(err, workspace.ErrNotMember),
 		errors.Is(err, workspace.ErrNotFound),
 		errors.Is(err, credential.ErrNotFound),
-		errors.Is(err, workflow.ErrNotFound):
+		errors.Is(err, workflow.ErrNotFound),
+		errors.Is(err, execution.ErrNotFound):
 		// 404, not 403. A 403 would confirm the resource exists, which lets
 		// anyone with an account probe for other users' workflow or workspace
 		// ids. Someone else's resource and a resource that was never there
@@ -87,6 +89,11 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		// retry with a different slug. Nothing here reveals whose workspace
 		// holds it, only that the name is gone.
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "slug is already taken"})
+
+	case errors.Is(err, execution.ErrNotRunning):
+		// 409: the run is real and the caller may see it, it just finished
+		// before the cancel arrived. Nothing to retry.
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "the run has already finished"})
 
 	case errors.Is(err, workspace.ErrLastOwner):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a workspace must keep an owner"})
