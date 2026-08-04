@@ -28,7 +28,7 @@ func workflowRouter(t *testing.T) (http.Handler, *workspace.Service) {
 
 	workspaces := workspace.NewService(workspace.NewMemoryStore())
 	workflows := workflow.NewService(workflow.NewMemoryStore())
-	router := NewRouter(tokenNamesTheCaller{}, testLogger(), workspaces, nil, workflows, nil, testAppURL)
+	router := NewRouter(Deps{Verifier: tokenNamesTheCaller{}, Logger: testLogger(), Workspaces: workspaces, Workflows: workflows, AppURL: testAppURL})
 	return router, workspaces
 }
 

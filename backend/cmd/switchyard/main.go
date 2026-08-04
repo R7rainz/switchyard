@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 	zlog "github.com/rs/zerolog/log"
 
+	"github.com/R7rainz/switchyard/backend/internal/ai"
 	"github.com/R7rainz/switchyard/backend/internal/api"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/config"
@@ -83,10 +84,15 @@ func main() {
 	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
 	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
 
+	// The provider is process-wide and holds no key: a workspace's key is
+	// fetched per call, so one OpenRouter client serves every workspace.
+	assistant := ai.NewService(ai.NewOpenRouter(nil), credentials)
+
 	// Runners the engine knows about. The built-ins need nothing but the
-	// standard library; GitHub, Slack, and AI nodes register themselves here as
-	// their packages arrive.
+	// standard library; every other package hands over its own, which is how
+	// GitHub and Slack will arrive.
 	runners := execution.Builtin(nil)
+	runners.Add(ai.Runners(assistant))
 	executions := execution.NewService(
 		execution.NewPostgresStore(pool), workflows, runners, execution.Options{})
 
@@ -106,7 +112,16 @@ func main() {
 	// frontend can produce.
 	server := &http.Server{
 		Addr:    cfg.Addr,
-		Handler: api.NewRouter(verifier, logger, workspaces, credentials, workflows, executions, cfg.AuthIssuer),
+		Handler: api.NewRouter(api.Deps{
+			Verifier:    verifier,
+			Logger:      logger,
+			Workspaces:  workspaces,
+			Credentials: credentials,
+			Workflows:   workflows,
+			Executions:  executions,
+			AI:          assistant,
+			AppURL:      cfg.AuthIssuer,
+		}),
 		// Bound how long a connection can sit half-open holding a slot.
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,

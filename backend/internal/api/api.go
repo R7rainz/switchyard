@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog"
 
+	"github.com/R7rainz/switchyard/backend/internal/ai"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -26,20 +27,28 @@ type TokenVerifier interface {
 	Verify(ctx context.Context, token string) (*auth.Claims, error)
 }
 
+// Deps is everything the HTTP layer needs. A struct rather than a parameter
+// list: these are five same-typed pointers, and positionally two of them can be
+// swapped without the compiler noticing.
+type Deps struct {
+	Verifier TokenVerifier
+	Logger   zerolog.Logger
+
+	Workspaces  *workspace.Service
+	Credentials *credential.Service
+	Workflows   *workflow.Service
+	Executions  *execution.Service
+	AI          *ai.Service
+
+	// AppURL is the frontend's base URL, which is where an invite link has to
+	// point: the invitee needs a page, not this API.
+	AppURL string
+}
+
 // NewRouter builds the HTTP surface. Routing, encoding, and auth enforcement
 // live here; everything else belongs to the domain packages.
-//
-// appURL is the frontend's base URL, which is where an invite link has to
-// point: the invitee needs a page, not this API.
-func NewRouter(
-	verifier TokenVerifier,
-	logger zerolog.Logger,
-	workspaces *workspace.Service,
-	credentials *credential.Service,
-	workflows *workflow.Service,
-	executions *execution.Service,
-	appURL string,
-) http.Handler {
+func NewRouter(deps Deps) http.Handler {
+	verifier, logger, workspaces, appURL := deps.Verifier, deps.Logger, deps.Workspaces, deps.AppURL
 	router := chi.NewRouter()
 
 	// RequestID first, so every line the other middleware logs can be tied
@@ -56,9 +65,10 @@ func NewRouter(
 	router.Get("/healthz", handleHealthz)
 
 	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
-	creds := &credentialAPI{credentials: credentials}
-	flows := &workflowAPI{workflows: workflows}
-	runs := &executionAPI{executions: executions}
+	creds := &credentialAPI{credentials: deps.Credentials}
+	flows := &workflowAPI{workflows: deps.Workflows}
+	runs := &executionAPI{executions: deps.Executions}
+	assist := &aiAPI{ai: deps.AI}
 
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
@@ -104,6 +114,12 @@ func NewRouter(
 			r.With(readFlows).Get("/workflows/{workflowID}", flows.getWorkflow)
 			r.With(writeFlows).Patch("/workflows/{workflowID}", flows.updateWorkflow)
 			r.With(dropFlows).Delete("/workflows/{workflowID}", flows.deleteWorkflow)
+
+				// Generating stores nothing — it returns a graph for the canvas,
+				// because the user reviews and edits before anything exists. It
+				// still sits at workflow:write: it spends the workspace's model
+				// budget, and a viewer may not.
+				r.With(writeFlows).Post("/workflows/generate", assist.generateWorkflow)
 
 			// Running is a separate permission from editing: a VIEWER may watch
 			// what happened, and it takes a MEMBER to make something happen.
