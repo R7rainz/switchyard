@@ -29,6 +29,11 @@ func CORS(allowedOrigin string) func(http.Handler) http.Handler {
 				// without being told it may.
 				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
+				// Retry-After is not a header a browser hands to JavaScript unless
+				// it is named here. Without this the rate limiter sets a value the
+				// only client that needs it cannot read — the fetch sees 429 and a
+				// null header, and can say no more than "try again later".
+				w.Header().Set("Access-Control-Expose-Headers", "Retry-After")
 				// Cache the preflight so a browser does not re-ask before every
 				// call it makes.
 				w.Header().Set("Access-Control-Max-Age", "600")

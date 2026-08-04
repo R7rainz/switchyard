@@ -44,6 +44,11 @@ type Deps struct {
 	// 501 rather than panicking, which is what a test router wants.
 	Events EventStream
 
+	// GenerateLimit throttles AI generation per workspace. Absent means a
+	// default is used rather than no limit — an unmetered endpoint that spends
+	// an API key is not a state this should be able to boot into by omission.
+	GenerateLimit *Limiter
+
 	// AppURL is the frontend's base URL, which is where an invite link has to
 	// point: the invitee needs a page, not this API.
 	AppURL string
@@ -54,6 +59,11 @@ type Deps struct {
 func NewRouter(deps Deps) http.Handler {
 	verifier, logger, workspaces, appURL := deps.Verifier, deps.Logger, deps.Workspaces, deps.AppURL
 	router := chi.NewRouter()
+
+	generateLimit := deps.GenerateLimit
+	if generateLimit == nil {
+		generateLimit = NewLimiter(defaultGeneratePerHour, defaultGenerateBurst)
+	}
 
 	// RequestID first, so every line the other middleware logs can be tied
 	// back to one request.
@@ -123,7 +133,12 @@ func NewRouter(deps Deps) http.Handler {
 			// because the user reviews and edits before anything exists. It
 			// still sits at workflow:write: it spends the workspace's model
 			// budget, and a viewer may not.
-			r.With(writeFlows).Post("/workflows/generate", assist.generateWorkflow)
+			//
+			// It is also the only route carrying a rate limit, because it is the
+			// only one where a request costs money to somebody outside this
+			// system. The limit sits after the permission check, so a stranger
+			// cannot spend a workspace's allowance by probing it.
+			r.With(writeFlows, RateLimit(generateLimit)).Post("/workflows/generate", assist.generateWorkflow)
 
 			// Running is a separate permission from editing: a VIEWER may watch
 			// what happened, and it takes a MEMBER to make something happen.
