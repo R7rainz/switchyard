@@ -79,6 +79,7 @@
    * Each ends on a sensible resting state, because reduced motion below runs
    * them once and stops rather than leaving a frozen mid-frame.
    */
+  --animate-page-in: page-in 0.32s cubic-bezier(0.23, 1, 0.32, 1) both;
   --animate-travel: travel 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   --animate-branch-a: branch-a 4s ease-in-out infinite;
   --animate-branch-b: branch-b 4s ease-in-out infinite;
@@ -94,6 +95,13 @@
   --shadow-featured:
     rgba(17, 17, 17, 0.12) 0px 26px 60px -6px, rgba(17, 17, 17, 0.02) 0px 28px 28px -14px,
     rgba(17, 17, 17, 0.04) 0px 6px 6px -3px, rgba(17, 17, 17, 0.04) 0px 1px 1px -0.5px;
+}
+
+/* A page arriving. Transform and opacity only — the document rules out
+   animating layout, and a reflow on every route change would read as a jump. */
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* A dot crossing an edge: the run moving from one node to the next. */

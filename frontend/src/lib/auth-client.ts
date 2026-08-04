@@ -41,8 +41,8 @@ export async function getToken(): Promise<string | null> {
  * replace rather than assign, so the back button after signing in does not go
  * to the login form of a session that already exists.
  */
-export function enterApp() {
-  window.location.replace("/workflows");
+export function enterApp(to = "/workflows") {
+  window.location.replace(to);
 }
 
 /**
