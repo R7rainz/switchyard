@@ -6,6 +6,8 @@ import type { WorkflowNode } from "@/lib/api";
 import { paletteFor } from "@/lib/categories";
 import { nodeSpecs, specFor } from "@/lib/node-types";
 import { Button, Eyebrow, Input, Textarea, cx } from "@/components/ui";
+import { RunStatus } from "@/components/run-status";
+import { useNodeResult } from "./run-state";
 
 /** The list of node types you can add, grouped nowhere — there are seven. */
 export function Palette({ onAdd }: { onAdd: (type: string) => void }) {
@@ -86,6 +88,8 @@ export function Inspector({
         </button>
       </div>
 
+      <NodeResult nodeId={node.id} />
+
       <label className="flex flex-col gap-2">
         <Eyebrow>Label</Eyebrow>
         <Input
@@ -164,3 +168,33 @@ export function SaveState({
 }
 
 export { Button };
+
+/**
+ * What this node did in the run being watched.
+ *
+ * The engine keeps a failed node's output deliberately — an HTTP node rejected
+ * with a 401 still holds the body saying why, and that body is the reason
+ * anyone opens a failed run. Showing the config without it means the answer is
+ * on the server and nowhere a person can see it.
+ */
+function NodeResult({ nodeId }: { nodeId: string }) {
+  const { status, output, error } = useNodeResult(nodeId);
+  if (!status) return null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl bg-cream-wash p-3">
+      <div className="flex items-center justify-between gap-2">
+        <Eyebrow>Last run</Eyebrow>
+        <RunStatus status={status} />
+      </div>
+
+      {error && <p className="text-caption leading-relaxed text-phoenix-orange">{error}</p>}
+
+      {output !== undefined && (
+        <pre className="max-h-48 overflow-auto rounded-lg bg-canvas-white p-2 font-mono text-[11px] leading-relaxed text-ink">
+          {JSON.stringify(output, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}

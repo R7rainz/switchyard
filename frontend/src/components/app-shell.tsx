@@ -9,9 +9,11 @@ import { useWorkspace } from "@/lib/queries";
 
 import { Button, Eyebrow, Skeleton, Wordmark, cx } from "./ui";
 
-// Only routes that exist. A nav linking to a 404 is worse than a short nav;
-// Runs and Settings arrive with their screens.
-const links = [{ href: "/workflows", label: "Workflows" }];
+// Only routes that exist. A nav linking to a 404 is worse than a short nav.
+const links = [
+  { href: "/workflows", label: "Workflows" },
+  { href: "/settings", label: "Settings" },
+];
 
 /**
  * The chrome every signed-in page sits inside.

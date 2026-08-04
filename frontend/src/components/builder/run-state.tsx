@@ -19,6 +19,12 @@ type RunState = {
   error: string | null;
   /** Per-node failure messages, so a node can show why it failed. */
   nodeErrors: Record<string, string>;
+  /**
+   * What each node returned. A failed node keeps its output on purpose — an
+   * HTTP node rejected with a 401 still holds the body explaining why, and
+   * that body is the whole reason anyone opens a failed run.
+   */
+  nodeOutputs: Record<string, unknown>;
 };
 
 const empty: RunState = {
@@ -27,12 +33,23 @@ const empty: RunState = {
   nodes: {},
   error: null,
   nodeErrors: {},
+  nodeOutputs: {},
 };
 
 const RunContext = createContext<RunState>(empty);
 
 export const useRunState = () => useContext(RunContext);
 export const useNodeStatus = (nodeId: string) => useContext(RunContext).nodes[nodeId];
+
+/** What one node did: its status, its output, and why it failed. */
+export function useNodeResult(nodeId: string) {
+  const run = useContext(RunContext);
+  return {
+    status: run.nodes[nodeId],
+    output: run.nodeOutputs[nodeId],
+    error: run.nodeErrors[nodeId],
+  };
+}
 
 export function RunProvider({
   workspaceId,
@@ -75,6 +92,10 @@ export function RunProvider({
               nodeErrors: event.error
                 ? { ...current.nodeErrors, [event.nodeId]: event.error }
                 : current.nodeErrors,
+              nodeOutputs:
+                event.output === undefined
+                  ? current.nodeOutputs
+                  : { ...current.nodeOutputs, [event.nodeId]: event.output },
             };
           }
           return { ...current, status: event.status, error: event.error ?? current.error };
@@ -89,9 +110,11 @@ export function RunProvider({
         if (!live) return;
         const nodes: Record<string, ExecutionStatus> = {};
         const nodeErrors: Record<string, string> = {};
+        const nodeOutputs: Record<string, unknown> = {};
         for (const node of snapshot.nodes) {
           nodes[node.nodeId] = node.status;
           if (node.error) nodeErrors[node.nodeId] = node.error;
+          if (node.output !== undefined) nodeOutputs[node.nodeId] = node.output;
         }
         setState((current) => ({
           ...current,
@@ -101,6 +124,7 @@ export function RunProvider({
           // delivered is newer than a fetch that was in flight beside it.
           nodes: { ...nodes, ...current.nodes },
           nodeErrors: { ...nodeErrors, ...current.nodeErrors },
+          nodeOutputs: { ...nodeOutputs, ...current.nodeOutputs },
         }));
       } catch {
         // The socket is the live path; a failed reconcile is not worth

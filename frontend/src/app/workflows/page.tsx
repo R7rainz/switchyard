@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Play, Plus, Trash2 } from "lucide-react";
+import { Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { GraphPreview } from "@/components/graph-preview";
+import { GenerateModal } from "@/components/generate-modal";
 import { RecentRuns } from "@/components/recent-runs";
 import { RunStatus } from "@/components/run-status";
 import { Modal } from "@/components/modal";
@@ -57,6 +58,7 @@ export default function WorkflowsPage() {
   const { workspace } = useWorkspace();
   const { data: flows, isPending, error } = useWorkflows(workspace?.id);
   const [creating, setCreating] = useState(false);
+  const [drafting, setDrafting] = useState(false);
 
   return (
     <>
@@ -64,10 +66,16 @@ export default function WorkflowsPage() {
         eyebrow="Workspace"
         title="Workflows"
         actions={
-          <Button onClick={() => setCreating(true)} disabled={!workspace}>
-            <Plus size={16} strokeWidth={1.75} />
-            New workflow
-          </Button>
+          <>
+            <Button variant="neutral" onClick={() => setDrafting(true)} disabled={!workspace}>
+              <Sparkles size={16} strokeWidth={1.75} />
+              Draft with AI
+            </Button>
+            <Button onClick={() => setCreating(true)} disabled={!workspace}>
+              <Plus size={16} strokeWidth={1.75} />
+              New workflow
+            </Button>
+          </>
         }
       />
 
@@ -93,11 +101,25 @@ export default function WorkflowsPage() {
               canvas, or describe one and let AI draft it.
             </p>
           </div>
-          <Button onClick={() => setCreating(true)}>Create the first one</Button>
+          <div className="flex flex-wrap justify-center gap-3">
+            <Button onClick={() => setDrafting(true)}>
+              <Sparkles size={16} strokeWidth={1.75} />
+              Draft one with AI
+            </Button>
+            <Button variant="neutral" onClick={() => setCreating(true)}>
+              Start from an empty canvas
+            </Button>
+          </div>
         </div>
       )}
 
       <RecentRuns workspaceId={workspace?.id} />
+
+      <GenerateModal
+        open={drafting}
+        onClose={() => setDrafting(false)}
+        workspaceId={workspace?.id}
+      />
 
       <CreateWorkflowModal
         open={creating}
@@ -149,9 +171,9 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
         </Link>
 
         <div className="flex items-start justify-between gap-3 px-5">
-          {/* Not a link yet: the page this opens is the builder, and a card
-              that navigates to a 404 is worse than one that does not. */}
-          <span className="text-body-lg text-ink">{workflow.name}</span>
+          <Link href={`/workflows/${workflow.id}`} className="text-body-lg text-ink hover:underline">
+            {workflow.name}
+          </Link>
           <button
             onClick={() => setConfirming(true)}
             aria-label={`Delete ${workflow.name}`}
