@@ -37,11 +37,17 @@ const buttonVariants: Record<ButtonVariant, string> = {
 
 export function Button({
   variant = "primary",
+  // Defaults to "button", not the HTML default of "submit". A button inside a
+  // form that submits because nobody set a type is a classic way to lose a
+  // half-filled form to a Cancel click — the delete dialogs' Cancel buttons
+  // were reporting type=submit for exactly that reason.
+  type = "button",
   className,
   ...props
 }: ComponentProps<"button"> & { variant?: ButtonVariant }) {
   return (
     <button
+      type={type}
       className={cx(
         "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4",
         "text-body-sm whitespace-nowrap cursor-pointer",
@@ -122,9 +128,35 @@ export function Input({ className, ...props }: ComponentProps<"input">) {
   );
 }
 
-export function Textarea({ className, ...props }: ComponentProps<"textarea">) {
+/**
+ * A textarea, optionally one that sends on Enter.
+ *
+ * Off by default, because a paragraph field has to be able to hold a paragraph.
+ * On for a field that is a prompt or a single thought — there, Enter meaning
+ * "go" is the convention people arrive with, and Shift+Enter still opens a new
+ * line. Cmd/Ctrl+Enter submits either way, which is the escape hatch for the
+ * fields that keep Enter.
+ */
+export function Textarea({
+  submitOnEnter,
+  onKeyDown,
+  className,
+  ...props
+}: ComponentProps<"textarea"> & { submitOnEnter?: boolean }) {
   return (
     <textarea
+      onKeyDown={(event) => {
+        onKeyDown?.(event);
+        if (event.key !== "Enter" || event.defaultPrevented) return;
+
+        const modified = event.metaKey || event.ctrlKey;
+        if (!modified && (!submitOnEnter || event.shiftKey)) return;
+
+        // requestSubmit rather than submit: it runs validation and fires the
+        // submit event, which is what the React handler is listening for.
+        event.preventDefault();
+        event.currentTarget.form?.requestSubmit();
+      }}
       className={cx(
         "w-full resize-y rounded-xl border border-hairline bg-canvas-white px-4 py-3",
         "text-body-sm text-ink placeholder:text-ash",

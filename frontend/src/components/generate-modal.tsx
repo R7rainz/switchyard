@@ -105,10 +105,11 @@ export function GenerateModal({
         >
           <Field
             label="What should it do?"
-            hint="Name the trigger, the steps, and any branch. The model only knows the node types this engine can actually run."
+            hint="Enter to draft it, Shift+Enter for a new line. The model only knows the node types this engine can actually run."
           >
             <Textarea
               autoFocus
+              submitOnEnter
               rows={4}
               value={prompt}
               onChange={(event) => setPrompt(event.target.value)}
