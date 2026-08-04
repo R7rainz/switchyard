@@ -110,6 +110,9 @@ func (s *Service) run(ctx context.Context, run Execution) {
 		logger.Error().Err(err).Msg("could not start execution")
 		return
 	}
+	// Announced after the row moves, never before: a watcher must not see
+	// RUNNING for a run the database does not agree has started.
+	s.publish(Event{Type: EventExecution, ExecutionID: run.ID, Status: StatusRunning})
 
 	status, message := s.walk(ctx, run)
 	s.finish(ctx, run.ID, status, message)
@@ -130,6 +133,7 @@ func (s *Service) finish(ctx context.Context, id string, status Status, message 
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	_ = s.store.Finish(write, id, status, message, s.now())
+	s.publish(Event{Type: EventExecution, ExecutionID: id, Status: status, Error: message})
 }
 
 // walk runs the nodes in dependency order and returns the run's outcome.
@@ -294,6 +298,17 @@ func (s *Service) record(ctx context.Context, row NodeRun) {
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	_ = s.store.SaveNodeRun(write, row)
+
+	// Every node transition passes through here — RUNNING, then its outcome,
+	// and SKIPPED for a branch not taken — so this one call covers the lot.
+	s.publish(Event{
+		Type:        EventNode,
+		ExecutionID: row.ExecutionID,
+		NodeID:      row.NodeID,
+		Status:      row.Status,
+		Output:      row.Output,
+		Error:       row.Error,
+	})
 }
 
 // triggerOf returns the graph's trigger. Runnable has already proved there is

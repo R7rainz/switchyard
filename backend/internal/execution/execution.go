@@ -128,6 +128,9 @@ type Service struct {
 	// nodes can still add up to something nobody meant to start.
 	runTimeout time.Duration
 
+	// events is where progress is announced. Nil when nobody is listening.
+	events Publisher
+
 	// live tracks in-flight runs so Cancel has something to cancel. It is not
 	// durable on purpose: a run only exists in this process, so a restart is
 	// handled by Reclaim rather than by remembering anything here.
@@ -138,6 +141,11 @@ type Service struct {
 type Options struct {
 	NodeTimeout time.Duration
 	RunTimeout  time.Duration
+
+	// Events receives what the engine is doing as it happens. Optional: a nil
+	// Publisher means nobody is listening, which is the correct state for a
+	// test and for a process nothing has connected to.
+	Events Publisher
 }
 
 const (
@@ -161,6 +169,7 @@ func NewService(store Store, workflows Workflows, runners Registry, opts Options
 		newID:       func() string { return rand.Text() },
 		nodeTimeout: opts.NodeTimeout,
 		runTimeout:  opts.RunTimeout,
+		events:      opts.Events,
 		live:        newLiveRuns(),
 	}
 }
