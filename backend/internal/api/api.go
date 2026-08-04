@@ -40,6 +40,10 @@ type Deps struct {
 	Executions  *execution.Service
 	AI          *ai.Service
 
+	// Events is the WebSocket hub. Absent means the streaming route answers
+	// 501 rather than panicking, which is what a test router wants.
+	Events EventStream
+
 	// AppURL is the frontend's base URL, which is where an invite link has to
 	// point: the invitee needs a page, not this API.
 	AppURL string
@@ -67,7 +71,7 @@ func NewRouter(deps Deps) http.Handler {
 	ws := &workspaceAPI{workspaces: workspaces, appURL: appURL}
 	creds := &credentialAPI{credentials: deps.Credentials}
 	flows := &workflowAPI{workflows: deps.Workflows}
-	runs := &executionAPI{executions: deps.Executions}
+	runs := &executionAPI{executions: deps.Executions, events: deps.Events}
 	assist := &aiAPI{ai: deps.AI}
 
 	router.Route("/api", func(r chi.Router) {
@@ -115,11 +119,11 @@ func NewRouter(deps Deps) http.Handler {
 			r.With(writeFlows).Patch("/workflows/{workflowID}", flows.updateWorkflow)
 			r.With(dropFlows).Delete("/workflows/{workflowID}", flows.deleteWorkflow)
 
-				// Generating stores nothing — it returns a graph for the canvas,
-				// because the user reviews and edits before anything exists. It
-				// still sits at workflow:write: it spends the workspace's model
-				// budget, and a viewer may not.
-				r.With(writeFlows).Post("/workflows/generate", assist.generateWorkflow)
+			// Generating stores nothing — it returns a graph for the canvas,
+			// because the user reviews and edits before anything exists. It
+			// still sits at workflow:write: it spends the workspace's model
+			// budget, and a viewer may not.
+			r.With(writeFlows).Post("/workflows/generate", assist.generateWorkflow)
 
 			// Running is a separate permission from editing: a VIEWER may watch
 			// what happened, and it takes a MEMBER to make something happen.
@@ -132,6 +136,12 @@ func NewRouter(deps Deps) http.Handler {
 			r.With(readRuns).Get("/executions", runs.listExecutions)
 			r.With(readRuns).Get("/executions/{executionID}", runs.getExecution)
 			r.With(runRuns).Post("/executions/{executionID}/cancel", runs.cancelExecution)
+
+			// Watching is reading, so it sits with execution:read. The
+			// upgrade happens inside the handler, behind the same
+			// middleware every other route uses — there is no second
+			// authentication path for WebSockets to get wrong.
+			r.With(readRuns).Get("/executions/{executionID}/events", runs.streamExecution)
 		})
 
 		// Accepting cannot be workspace-scoped: the caller holds no membership
@@ -251,10 +261,33 @@ func handleMe(w http.ResponseWriter, r *http.Request) {
 
 // bearerToken pulls the credential out of an Authorization header, accepting
 // the scheme case-insensitively as RFC 7235 requires.
+//
+// A WebSocket falls back to the subprotocol header, because the browser's
+// WebSocket constructor cannot set request headers. The alternative everybody
+// reaches for first is a query parameter, and that is the one place a bearer
+// token must not go: URLs are what access logs, proxies, and Referer headers
+// record. The subprotocol is a header, so it is recorded nowhere by default.
 func bearerToken(r *http.Request) (string, bool) {
-	header := r.Header.Get("Authorization")
-	scheme, token, found := strings.Cut(header, " ")
-	if !found || !strings.EqualFold(scheme, "Bearer") {
+	if header := r.Header.Get("Authorization"); header != "" {
+		scheme, token, found := strings.Cut(header, " ")
+		if !found || !strings.EqualFold(scheme, "Bearer") {
+			return "", false
+		}
+		token = strings.TrimSpace(token)
+		return token, token != ""
+	}
+	return subprotocolToken(r)
+}
+
+// subprotocolToken reads `Sec-WebSocket-Protocol: bearer, <token>`, which is
+// how new WebSocket(url, ["bearer", token]) arrives.
+func subprotocolToken(r *http.Request) (string, bool) {
+	offered := r.Header.Get("Sec-WebSocket-Protocol")
+	if offered == "" {
+		return "", false
+	}
+	scheme, token, found := strings.Cut(offered, ",")
+	if !found || !strings.EqualFold(strings.TrimSpace(scheme), "bearer") {
 		return "", false
 	}
 	token = strings.TrimSpace(token)

@@ -141,3 +141,62 @@ export type Generated = {
   description: string;
   graph: Graph;
 };
+
+export type ExecutionStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "SKIPPED";
+
+/**
+ * One thing that happened during a run.
+ *
+ * Every event carries the full state of its subject rather than a delta, so a
+ * client that missed one is corrected by the next rather than left drifting.
+ * `type` says whether the subject is the run or a node inside it.
+ */
+export type ExecutionEvent = {
+  type: "execution" | "node";
+  executionId: string;
+  status: ExecutionStatus;
+  nodeId?: string;
+  output?: unknown;
+  outputTruncated?: boolean;
+  error?: string;
+  at: string;
+};
+
+/**
+ * Watch a run. Returns a function that closes the socket.
+ *
+ * **Connect before you fetch.** Nothing is replayed, so a run that finishes
+ * between a fetch and this call would leave the page showing RUNNING with no
+ * event left to correct it. Connect first and the fetch returns either a
+ * finished run or a running one whose remaining events all arrive here.
+ *
+ * The token rides in the subprotocol because the WebSocket constructor cannot
+ * set headers. Not a query parameter: that is the one place a bearer token must
+ * not go, since URLs are what logs and proxies record.
+ *
+ * Reconnection is the caller's, and worth doing — the server drops a client
+ * that stops reading, and closing is how it says so. Refetch on reconnect.
+ */
+export async function watchExecution(
+  workspaceId: string,
+  executionId: string,
+  onEvent: (event: ExecutionEvent) => void,
+): Promise<() => void> {
+  const token = await getToken();
+  if (!token) throw new Error("Not signed in");
+
+  const url =
+    API_URL.replace(/^http/, "ws") +
+    `/api/workspaces/${workspaceId}/executions/${executionId}/events`;
+
+  const socket = new WebSocket(url, ["bearer", token]);
+  socket.onmessage = (message) => onEvent(JSON.parse(message.data) as ExecutionEvent);
+
+  return () => socket.close();
+}

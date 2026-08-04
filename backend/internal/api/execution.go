@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -20,6 +21,14 @@ import (
 // an id, and the caller watches it.
 type executionAPI struct {
 	executions *execution.Service
+	events     EventStream
+}
+
+// EventStream is the part of the websocket package this layer needs, declared
+// here where it is consumed. Serve upgrades the request and streams a topic
+// until the client goes away; it is called after authorization, never before.
+type EventStream interface {
+	Serve(w http.ResponseWriter, r *http.Request, topic string) error
 }
 
 // executionView is the wire shape of a run. The graph snapshot is deliberately
@@ -187,4 +196,42 @@ func durationMS(from, to time.Time) *int64 {
 	}
 	ms := to.Sub(from).Milliseconds()
 	return &ms
+}
+
+// streamExecution upgrades to a WebSocket and pushes this run's events until
+// the client goes away.
+//
+// The execution is looked up before subscribing, and that lookup is the
+// authorization. RequirePermission checked the workspace in the URL and knows
+// nothing about the {executionID} beside it, so without this, read access to
+// one workspace would be read access to every run in every workspace. The
+// store puts the workspace in the WHERE clause, so a run belonging to someone
+// else is simply not found.
+func (a *executionAPI) streamExecution(w http.ResponseWriter, r *http.Request) {
+	if a.events == nil {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "event streaming is not configured"})
+		return
+	}
+
+	run, _, err := a.executions.Get(r.Context(),
+		chi.URLParam(r, "workspaceID"), chi.URLParam(r, "executionID"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+
+	// Nothing is replayed, so the client must connect before it fetches.
+	//
+	// That ordering is the whole contract. Connect first and the fetch returns
+	// either a finished run or a running one whose remaining events all arrive
+	// here — both correct. Fetch first and a run that ends in the gap is a page
+	// showing RUNNING with nothing left to correct it, which is a run that
+	// looks hung forever.
+	//
+	// Keeping a replay buffer would remove the ordering requirement and add a
+	// second copy of state that can disagree with the rows. The rows are the
+	// record; this is a notification.
+	if err := a.events.Serve(w, r, execution.Topic(run.ID)); err != nil {
+		zerolog.Ctx(r.Context()).Debug().Err(err).Str("execution_id", run.ID).Msg("stream ended")
+	}
 }
