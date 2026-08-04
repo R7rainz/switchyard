@@ -70,3 +70,19 @@ func TestResponsesVaryOnOrigin(t *testing.T) {
 		t.Errorf("Vary = %q, want it to include Origin", got)
 	}
 }
+
+// Retry-After is set by the rate limiter and is useless unless the browser is
+// told it may be read. Without this the only client that needs the value gets
+// null and can say no more than "try again later".
+func TestRetryAfterIsReadableByTheBrowser(t *testing.T) {
+	handler := CORS(testAppURL)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+
+	request := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	request.Header.Set("Origin", testAppURL)
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, request)
+
+	if exposed := recorder.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(exposed, "Retry-After") {
+		t.Fatalf("Access-Control-Expose-Headers = %q, want it to name Retry-After", exposed)
+	}
+}

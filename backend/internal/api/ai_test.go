@@ -49,9 +49,28 @@ func aiRouter(t *testing.T, reply string, hasKey bool) (http.Handler, *workspace
 		Workspaces: workspaces,
 		Workflows:  workflows,
 		AI:         ai.NewService(modelReturns(reply), keyStored(hasKey)),
-		AppURL:     testAppURL,
+		// Generous, so the tests that are not about limiting never trip it.
+		GenerateLimit: NewLimiter(1000, 1000),
+		AppURL:        testAppURL,
 	})
 	return router, workspaces, workflows
+}
+
+// aiRouterLimited is aiRouter with a limiter the caller chooses, for the tests
+// that are about the limit itself.
+func aiRouterLimited(t *testing.T, reply string, hasKey bool, limiter *Limiter) http.Handler {
+	t.Helper()
+
+	workspaces := workspace.NewService(workspace.NewMemoryStore())
+	return NewRouter(Deps{
+		Verifier:      tokenNamesTheCaller{},
+		Logger:        testLogger(),
+		Workspaces:    workspaces,
+		Workflows:     workflow.NewService(workflow.NewMemoryStore()),
+		AI:            ai.NewService(modelReturns(reply), keyStored(hasKey)),
+		GenerateLimit: limiter,
+		AppURL:        testAppURL,
+	})
 }
 
 // Generating hands back a graph and stores nothing. The user reviews it on the
