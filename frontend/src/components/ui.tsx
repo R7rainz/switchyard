@@ -9,6 +9,8 @@
  */
 import type { ComponentProps, ReactNode } from "react";
 
+import { Logo } from "./logo";
+
 export function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -190,11 +192,11 @@ export function Skeleton({ className }: { className?: string }) {
   return <div className={cx("animate-pulse rounded-lg bg-pearl", className)} />;
 }
 
-/** The brand lockup: a phoenix dot and the name. */
+/** The brand lockup: the keyswitch mark and the name. */
 export function Wordmark({ className }: { className?: string }) {
   return (
     <span className={cx("inline-flex items-center gap-2", className)}>
-      <span aria-hidden className="size-2 rounded-full bg-phoenix-orange" />
+      <Logo size={18} />
       <span className="text-body-sm tracking-[-0.2px] text-ink">Switchyard</span>
     </span>
   );
