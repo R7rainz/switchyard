@@ -257,6 +257,12 @@ func postgresStore(t *testing.T) *PostgresStore {
 	if url == "" {
 		t.Skip("set SWITCHYARD_TEST_DATABASE_URL to run the Postgres store tests")
 	}
+	// These tests drop the public schema. Pointed at the development database
+	// that is every workflow, execution, and user gone, and the two URLs are
+	// similar enough to paste one where the other belongs.
+	if err := database.CheckTestURL(url, os.Getenv("DATABASE_URL")); err != nil {
+		t.Fatal(err)
+	}
 
 	ctx := context.Background()
 	pool, err := database.Connect(ctx, database.Options{URL: url, MaxConns: 1, ConnectTimeout: 5 * time.Second})
