@@ -1,89 +1,171 @@
 @import "tailwindcss";
 
 /*
- * Tokens from DESIGN.md, verbatim.
+ * Tokens from DESIGN.md.
  *
- * That document is a marketing-site reference — hero, trust bar, pricing nav,
- * 96px section rhythm. What carries over to an application is everything below:
- * the palette, the type scale, the surfaces, the motion. What does not is the
- * page rhythm, because a control surface is read at a desk, not scrolled. App
- * density uses the 24-40px steps of the same scale.
+ * That document is a marketing-site reference. What carries over to an
+ * application is the palette, the type scale, the shape language, and the
+ * motion. What does not is the page rhythm: 80-120px section gaps are for a
+ * page that is scrolled, and a control surface is read at a desk. App density
+ * uses the 12-24px steps of the same scale.
  */
 @theme {
-  --color-obsidian-canvas: #101010;
-  --color-carbon-lift: #1d1a18;
-  --color-ash-stroke: #3d3a39;
-  --color-graphite-mid: #4d4947;
-  --color-warm-granite: #8a8380;
-  --color-pale-stone: #b8b3b0;
-  --color-bone: #eeeeee;
-  --color-chalk: #fafafa;
-  --color-signal-orange: #ee6018;
-  --color-metric-green: #a0ca92;
+  --color-phoenix-orange: #e8400d;
+  --color-midnight-indigo: #10054d;
+  --color-charcoal: #272625;
+  --color-ink: #111111;
+  --color-canvas-white: #ffffff;
+  --color-cream-wash: #f6f5f3;
+  --color-ash: #6d6c6b;
+  --color-stone: #b1b1af;
+  --color-pearl: #ecebea;
+  --color-petal-pink: #ffd7f0;
+  --color-mint-green: #b7efb2;
+  --color-canary-yellow: #ffef99;
+  --color-soft-violet: #e2ddfd;
+  --color-aqua: #99fff9;
+  --color-indigo-deep: #2e2460;
 
   /*
-   * The geist package puts --font-geist-sans and --font-geist-mono on <html>.
-   * These are named for the utilities they generate (font-sans, font-mono) and
-   * point at those, rather than reusing the same names and referring to
-   * themselves.
+   * Hairlines are one alpha of Ink rather than a solid grey, so they sit
+   * correctly on white and on cream without a second token.
    */
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-hairline: rgb(17 17 17 / 0.08);
 
+  /*
+   * Labil Grotesk is not distributable; DESIGN.md names Inter as the first
+   * substitute, and it has the variable weight axis the system depends on.
+   */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --text-eyebrow: 10px;
+  --text-eyebrow--line-height: 1;
+  --text-eyebrow--letter-spacing: 0.3px;
   --text-caption: 12px;
   --text-caption--line-height: 1;
-  --text-caption--letter-spacing: -0.24px;
   --text-body-sm: 14px;
-  --text-body-sm--line-height: 1.43;
+  --text-body-sm--line-height: 1.3;
   --text-body: 16px;
-  --text-body--line-height: 1.5;
-  --text-heading: 36px;
+  --text-body--line-height: 1.4;
+  --text-body-lg: 20px;
+  --text-body-lg--line-height: 1.3;
+  --text-body-lg--letter-spacing: -0.4px;
+  --text-subheading: 28px;
+  --text-subheading--line-height: 1.1;
+  --text-subheading--letter-spacing: -0.476px;
+  --text-heading-sm: 36px;
+  --text-heading-sm--line-height: 1.1;
+  --text-heading-sm--letter-spacing: -1.08px;
+  --text-heading: 44px;
   --text-heading--line-height: 1.1;
-  --text-heading--letter-spacing: -1.12px;
-  --text-heading-lg: 44px;
-  --text-heading-lg--line-height: 1.12;
-  --text-heading-lg--letter-spacing: -1.1px;
-  --text-display: 72px;
-  --text-display--line-height: 1;
-  --text-display--letter-spacing: -2.88px;
+  --text-heading--letter-spacing: -1.76px;
+  --text-heading-lg: 56px;
+  --text-heading-lg--line-height: 1;
+  --text-heading-lg--letter-spacing: -2.8px;
+  --text-display: 84px;
+  --text-display--line-height: 0.8;
+  --text-display--letter-spacing: -2.52px;
 
-  --radius-sm: 3px;
-  --radius-lg: 10px;
-  --radius-2xl: 20px;
+  /* Two values define the whole shape language: 8 on controls, 12 on cards. */
+  --radius-sm: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /*
+   * Loops for the capability cards. Every one moves transform or opacity only —
+   * DESIGN.md is explicit that motion never animates layout properties, and a
+   * width or height keyframe is what forces a re-layout every frame.
+   *
+   * Each ends on a sensible resting state, because reduced motion below runs
+   * them once and stops rather than leaving a frozen mid-frame.
+   */
+  --animate-travel: travel 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-branch-a: branch-a 4s ease-in-out infinite;
+  --animate-branch-b: branch-b 4s ease-in-out infinite;
+  --animate-emit: emit 2.6s ease-in-out infinite;
+  --animate-arrive: arrive 2.6s ease-in-out infinite;
+
+  --shadow-hairline: rgba(17, 17, 17, 0.05) 0px 0px 0px 1px inset;
+  --shadow-card:
+    rgba(17, 17, 17, 0.02) 0px -6px 6px 0px, rgba(17, 17, 17, 0.01) 0px -23px 9px 0px;
+  --shadow-raised:
+    rgba(17, 17, 17, 0.04) 0px 1px 2px 0px, rgba(17, 17, 17, 0.04) 0px 4px 8px 0px,
+    rgba(17, 17, 17, 0.04) 0px 0px 1px 0px;
+  --shadow-featured:
+    rgba(17, 17, 17, 0.12) 0px 26px 60px -6px, rgba(17, 17, 17, 0.02) 0px 28px 28px -14px,
+    rgba(17, 17, 17, 0.04) 0px 6px 6px -3px, rgba(17, 17, 17, 0.04) 0px 1px 1px -0.5px;
 }
 
-/*
- * Motion is short and mechanical - the feel of a CLI tool, not a marketing
- * site. Colour, background, border, and stroke move together so a state change
- * reads as one switch flipping rather than a layered animation.
- */
+/* A dot crossing an edge: the run moving from one node to the next. */
+@keyframes travel {
+  0% { transform: translateX(0); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(var(--travel-distance, 64px)); opacity: 0; }
+}
+
+/* Two outputs of a condition, taking turns. */
+@keyframes branch-a {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0.25; }
+}
+@keyframes branch-b {
+  0%, 45% { opacity: 0.25; }
+  55%, 100% { opacity: 1; }
+}
+
+/* A response forming, one line at a time. Scale rather than width. */
+@keyframes emit {
+  0%, 10% { transform: scaleX(0); }
+  45%, 100% { transform: scaleX(1); }
+}
+
+/* Something coming back: a status landing after the request went out. */
+@keyframes arrive {
+  0%, 55% { opacity: 0; transform: scale(0.9); }
+  70%, 100% { opacity: 1; transform: scale(1); }
+}
+
 @layer base {
   :root {
-    --ease-switch: cubic-bezier(0.4, 0, 0.2, 1);
+    /* Micro-interactions are ease; entrances get the expressive curve. */
+    --ease-micro: ease;
+    --ease-enter: cubic-bezier(0.23, 1, 0.32, 1);
+
+    /* The one sanctioned gradient. Its CSS form is also the WebGL fallback. */
+    --gradient-phoenix: radial-gradient(
+      386.06% 162.79% at 3.77% -12.1%,
+      rgb(232, 64, 13) 0%,
+      rgb(255, 238, 216) 31.14%,
+      rgb(208, 178, 255) 81.98%
+    );
   }
 
   * {
-    border-color: var(--color-ash-stroke);
+    border-color: var(--color-hairline);
   }
 
   html {
-    background: var(--color-obsidian-canvas);
-    color-scheme: dark;
+    background: var(--color-canvas-white);
+    color-scheme: light;
   }
 
   body {
-    background: var(--color-obsidian-canvas);
-    color: var(--color-bone);
+    background: var(--color-canvas-white);
+    /* Never #000: Ink is the primary text colour and it carries some warmth. */
+    color: var(--color-ink);
     font-family: var(--font-sans);
     font-weight: 400;
     font-size: var(--text-body-sm);
-    line-height: 1.43;
+    line-height: 1.3;
     -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01" on, "ss02" on;
   }
 
   /*
-   * The system speaks at weight 400 with tight tracking. Browsers bold headings
-   * and <strong> by default, and that breaks the voice everywhere at once.
+   * Weight 400 at 44 and 56px is the signature: authority through restraint
+   * rather than volume. Browsers bold headings by default, which is exactly
+   * the convention this system is refusing.
    */
   h1,
   h2,
@@ -100,25 +182,24 @@
   input,
   textarea,
   select {
-    transition-property: color, background-color, border-color, fill, stroke, opacity;
-    transition-duration: 0.15s;
-    transition-timing-function: var(--ease-switch);
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 0.25s;
+    transition-timing-function: var(--ease-micro);
   }
 
   ::selection {
-    background: var(--color-signal-orange);
-    color: var(--color-obsidian-canvas);
+    background: var(--color-canary-yellow);
+    color: var(--color-ink);
   }
 
-  /* Keyboard focus has to be visible on both surfaces the system uses. */
   :focus-visible {
-    outline: 1px solid var(--color-signal-orange);
+    outline: 2px solid var(--color-phoenix-orange);
     outline-offset: 2px;
   }
 
-  /* The dialog element does the modal work; only its backdrop needs styling. */
   dialog::backdrop {
-    background: rgb(16 16 16 / 0.72);
+    background: rgb(17 17 17 / 0.28);
+    backdrop-filter: blur(4px);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -126,6 +207,10 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* Run once and stop. Without this a looping animation restarts thousands
+         of times a second and settles on an arbitrary frame instead of the
+         resting state its last keyframe describes. */
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }

@@ -2,15 +2,15 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 
-import { Mono } from "./ui";
+import { Eyebrow } from "./ui";
 
 /**
  * A modal built on <dialog>.
  *
- * The native element already does focus trapping, inert background, Escape to
- * close, and the top layer — all the parts a hand-rolled modal gets wrong and
- * a component library is usually installed to provide. This is the wrapper that
- * connects it to React state; there is no dialog library here on purpose.
+ * The native element already does focus trapping, an inert background, Escape
+ * to close, and the top layer — all the parts a hand-rolled modal gets wrong
+ * and a component library is usually installed to provide. This is the wrapper
+ * that connects it to React state; there is no dialog dependency here.
  */
 export function Modal({
   open,
@@ -29,7 +29,7 @@ export function Modal({
     const dialog = ref.current;
     if (!dialog) return;
     // showModal is what puts it in the top layer and makes the rest inert;
-    // toggling the open attribute instead would render it inline and unguarded.
+    // toggling the open attribute renders it inline and unguarded.
     if (open && !dialog.open) dialog.showModal();
     if (!open && dialog.open) dialog.close();
   }, [open]);
@@ -37,18 +37,18 @@ export function Modal({
   return (
     <dialog
       ref={ref}
-      // Escape and a backdrop click both come back through here, so the parent
-      // has one place to learn the dialog is gone.
+      // Escape and a backdrop click both arrive here, so the parent has one
+      // place to learn the dialog is gone.
       onClose={onClose}
       onClick={(event) => {
         // The backdrop is the dialog element itself; a click landing on it
         // rather than on the content means outside.
         if (event.target === ref.current) ref.current?.close();
       }}
-      className="m-auto w-full max-w-md rounded-lg border border-ash-stroke bg-obsidian-canvas p-0 text-bone backdrop:bg-obsidian-canvas/70"
+      className="m-auto w-full max-w-lg rounded-xl border border-hairline bg-canvas-white p-0 text-ink shadow-[var(--shadow-featured)]"
     >
       <div className="flex flex-col gap-6 p-6">
-        <Mono className="text-pale-stone">{title}</Mono>
+        <Eyebrow>{title}</Eyebrow>
         {children}
       </div>
     </dialog>
