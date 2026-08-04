@@ -248,6 +248,17 @@ export type NodeRun = {
   durationMs?: number;
 };
 
+/** One run, whole: the row, the graph it actually ran, and what each node did. */
+export type ExecutionDetail = {
+  execution: Execution;
+  graph: Graph;
+  nodes: NodeRun[];
+};
+
+/** The three statuses a run stops at. A node can also be SKIPPED. */
+export const isTerminal = (status: ExecutionStatus | null | undefined) =>
+  status === "SUCCEEDED" || status === "FAILED" || status === "CANCELLED";
+
 export const executions = {
   /** Newest first. An empty workflowId means every run in the workspace. */
   list: (workspaceId: string, options: { workflowId?: string; limit?: number } = {}) =>
@@ -266,9 +277,7 @@ export const executions = {
    */
   get: (workspaceId: string, id: string) =>
     api
-      .get<{ execution: Execution; graph: Graph; nodes: NodeRun[] }>(
-        `/api/workspaces/${workspaceId}/executions/${id}`,
-      )
+      .get<ExecutionDetail>(`/api/workspaces/${workspaceId}/executions/${id}`)
       .then((r) => r.data),
 
   start: (workspaceId: string, workflowId: string, input?: unknown) =>
