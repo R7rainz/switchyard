@@ -528,6 +528,58 @@ it takes a member to make something happen.
 correct: a workflow is data and the engine consumes it. `workflow` imports
 nothing back, so there is no cycle.
 
+### AI
+
+**`internal/ai` is the only package that talks to a model.** Two jobs:
+generating a workflow graph from a description, and running `ai.prompt` nodes.
+No migration — the key is an ordinary credential.
+
+**Generating stores nothing.** `POST .../workflows/generate` returns
+`{name, description, graph}` and creates no row. The canvas opens with it and
+the user saves it through the ordinary create endpoint once they have looked at
+it. That is "AI assists, never owns" in one route: a generate-and-save would
+put a workflow in the list nobody has read. It sits at `workflow:write`
+anyway — it spends the workspace's model budget.
+
+**The key is a per-workspace credential** (`openrouter`/`default`), fetched
+per call, never cached and never held on a struct. `Provider.Complete` takes
+the key as a *parameter* rather than a field for that reason: one process-wide
+provider serves every workspace and no long-lived value holds a secret. A
+workspace with no key gets `ErrNoCredential` → **400 naming the fix**, not the
+502 an upstream failure gets.
+
+**The generated graph is checked with `Validate`, not `Runnable`.** It is a
+draft heading for a canvas, so the same half-finished states a person may save
+are allowed here; what it must not be is malformed, which would break the
+editor rather than the run.
+
+**One retry, carrying the reason.** A model that returns an unusable graph is
+told what was wrong and asked again, once. Two failures is `ErrBadGraph` →
+**502**: the call succeeded and the content was the problem, so the caller's
+only move is to try again. `stripFence` unwraps a ```` ```json ```` block,
+since a model that wrapped a correct answer has still answered.
+
+**`systemPrompt` lists only node types that have a runner.** Advertising one
+the engine cannot execute buys a workflow that saves and then fails on its
+first run. Update it when a runner package lands. `layout` spaces nodes out
+when the model gave no positions, or the canvas opens with everything stacked
+at 0,0.
+
+**`ai` imports `execution`, never the reverse.** `ai.Runners(service)` returns
+a `Registry` that `main.go` merges in — the same shape `github` and `slack`
+will use. The engine knows the `Runner` interface and nothing about models.
+
+**Model calls are capped at 25s**, under the server's 30s write timeout, so a
+slow model is a real error rather than a response nobody is listening for.
+`DefaultModel` is one constant; a workflow that pinned a model keeps it.
+
+### The router takes a struct
+
+`api.NewRouter(api.Deps{...})`, not a parameter list. Five same-typed service
+pointers in a row can be swapped without the compiler noticing, and the tests
+that passed `nil, nil, nil, testAppURL` were the warning. A new service is a
+new field, and every existing call site keeps compiling.
+
 ## Commands
 
 Postgres, from the repo root:
