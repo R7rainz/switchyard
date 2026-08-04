@@ -38,10 +38,11 @@ export default function SignupPage() {
   return (
     <AuthLayout
       title="Create an account"
+      subtitle="Free while Switchyard is in development."
       footer={
         <>
           Already have one?{" "}
-          <Link href="/login" className="text-bone hover:text-chalk">
+          <Link href="/login" className="text-ink underline underline-offset-4">
             Sign in
           </Link>
         </>

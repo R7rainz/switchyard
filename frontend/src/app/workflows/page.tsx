@@ -6,17 +6,25 @@ import { useState } from "react";
 import { PageHeader } from "@/components/app-shell";
 import { Modal } from "@/components/modal";
 import {
+  Badge,
   Button,
+  Card,
   EmptyState,
   ErrorNote,
+  Eyebrow,
   Field,
   Input,
-  Mono,
   Skeleton,
   Textarea,
 } from "@/components/ui";
 import { apiError, type Workflow } from "@/lib/api";
-import { emptyGraph, useCreateWorkflow, useDeleteWorkflow, useWorkflows, useWorkspace } from "@/lib/queries";
+import {
+  emptyGraph,
+  useCreateWorkflow,
+  useDeleteWorkflow,
+  useWorkflows,
+  useWorkspace,
+} from "@/lib/queries";
 
 export default function WorkflowsPage() {
   const { workspace } = useWorkspace();
@@ -30,7 +38,7 @@ export default function WorkflowsPage() {
         title="Workflows"
         actions={
           <Button onClick={() => setCreating(true)} disabled={!workspace}>
-            <Plus size={14} strokeWidth={1.5} />
+            <Plus size={16} strokeWidth={1.75} />
             New workflow
           </Button>
         }
@@ -41,11 +49,15 @@ export default function WorkflowsPage() {
       {isPending || !workspace ? (
         <WorkflowListSkeleton />
       ) : flows && flows.length > 0 ? (
-        <WorkflowTable workflows={flows} workspaceId={workspace.id} />
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {flows.map((flow) => (
+            <WorkflowCard key={flow.id} workflow={flow} workspaceId={workspace.id} />
+          ))}
+        </ul>
       ) : (
         <EmptyState
           title="No workflows yet"
-          hint="A workflow is a graph of nodes: a trigger, some steps, and the edges between them. Start with an empty canvas or describe one and let AI draft it."
+          hint="A workflow is a graph of nodes: a trigger, some steps, and the edges between them. Start with an empty canvas, or describe one and let AI draft it."
           action={<Button onClick={() => setCreating(true)}>Create the first one</Button>}
         />
       )}
@@ -60,80 +72,54 @@ export default function WorkflowsPage() {
 }
 
 /**
- * The list. Columns are mono uppercase — a header is a system surface, not
- * copy — and the rows are separated by hairlines rather than cards, because a
- * card per row would make ten workflows look like ten decisions.
+ * A card per workflow rather than a table row.
+ *
+ * The list is short and each item is a thing you open, not a record you scan a
+ * column of — and a card grid reflows on a phone without the fixed-width
+ * columns that made the previous table unreadable there.
  */
-function WorkflowTable({
-  workflows,
-  workspaceId,
-}: {
-  workflows: Workflow[];
-  workspaceId: string;
-}) {
-  return (
-    <div className="rounded-lg border border-carbon-lift">
-      {/* Column headers only exist where there are columns. Below sm the row
-          stacks, and a header for a layout that is not a table is noise. */}
-      <div className="hidden grid-cols-[1fr_140px_100px] items-center gap-4 border-b border-carbon-lift px-5 py-3 sm:grid">
-        <Mono>Name</Mono>
-        <Mono>Updated</Mono>
-        <Mono className="text-right">Nodes</Mono>
-      </div>
-
-      <ul>
-        {workflows.map((flow) => (
-          <WorkflowRow key={flow.id} workflow={flow} workspaceId={workspaceId} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function WorkflowRow({ workflow, workspaceId }: { workflow: Workflow; workspaceId: string }) {
+function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspaceId: string }) {
   const remove = useDeleteWorkflow(workspaceId);
   const [confirming, setConfirming] = useState(false);
+  const nodes = workflow.graph.nodes.length;
 
   return (
-    <li className="group flex flex-col gap-2 border-b border-carbon-lift px-5 py-4 last:border-b-0 hover:bg-carbon-lift/40 sm:grid sm:grid-cols-[1fr_140px_100px] sm:items-center sm:gap-4 max-sm:relative">
-      <div className="flex min-w-0 flex-col gap-1">
-        {/* Not a link yet: the builder is the page this opens, and a row that
-            navigates to a 404 is worse than one that does not navigate. */}
-        <span className="truncate text-body-sm text-bone">{workflow.name}</span>
+    <li>
+      <Card className="group flex h-full min-h-40 flex-col gap-3">
+        <div className="flex items-start justify-between gap-3">
+          {/* Not a link yet: the page this opens is the builder, and a card
+              that navigates to a 404 is worse than one that does not. */}
+          <span className="text-body-lg text-ink">{workflow.name}</span>
+          <button
+            onClick={() => setConfirming(true)}
+            aria-label={`Delete ${workflow.name}`}
+            // Always visible where there is no hover. A control revealed only
+            // on hover does not exist on a touch screen, and focus-visible
+            // keeps it reachable by keyboard everywhere.
+            className="-m-1 shrink-0 rounded-lg p-1 text-stone hover:text-phoenix-orange focus-visible:opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+          >
+            <Trash2 size={16} strokeWidth={1.75} />
+          </button>
+        </div>
+
         {workflow.description && (
-          <span className="truncate text-body-sm text-warm-granite">{workflow.description}</span>
+          <p className="line-clamp-2 text-body-sm leading-relaxed text-ash">
+            {workflow.description}
+          </p>
         )}
-      </div>
 
-      {/* Below sm the two right-hand columns become one mono line under the
-          name. Squeezing them into fixed widths on a phone left the name
-          rendering as a single letter. */}
-      <span className="text-body-sm text-warm-granite max-sm:font-mono max-sm:text-caption max-sm:uppercase">
-        {relativeTime(workflow.updatedAt)}
-        <span className="sm:hidden"> · {workflow.graph.nodes.length} nodes</span>
-      </span>
-
-      <div className="flex items-center justify-end gap-3 max-sm:absolute max-sm:top-4 max-sm:right-5">
-        <span className="hidden font-mono text-caption text-pale-stone sm:inline">
-          {workflow.graph.nodes.length}
-        </span>
-        <button
-          onClick={() => setConfirming(true)}
-          aria-label={`Delete ${workflow.name}`}
-          // Always visible where there is no hover. A control revealed only on
-          // hover does not exist on a touch screen, and only-on-hover is not
-          // reachable by keyboard either, hence focus-visible.
-          className="text-graphite-mid hover:text-signal-orange focus-visible:opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
-        >
-          <Trash2 size={14} strokeWidth={1.5} />
-        </button>
-      </div>
+        <div className="mt-auto flex items-center gap-2">
+          <Badge tone={nodes > 0 ? "mint" : undefined}>
+            {nodes} {nodes === 1 ? "node" : "nodes"}
+          </Badge>
+          <Eyebrow>{relativeTime(workflow.updatedAt)}</Eyebrow>
+        </div>
+      </Card>
 
       <Modal open={confirming} onClose={() => setConfirming(false)} title="Delete workflow">
-        <p className="text-body-sm text-warm-granite">
-          <span className="text-bone">{workflow.name}</span> and its graph will be removed. Past
-          runs keep the copy of the graph they executed, so this does not change what already
-          happened.
+        <p className="text-body-sm leading-relaxed text-ash">
+          <span className="text-ink">{workflow.name}</span> and its graph will be removed. Past runs
+          keep the copy of the graph they executed, so this does not change what already happened.
         </p>
         {remove.error && <ErrorNote>{apiError(remove.error)}</ErrorNote>}
         <div className="flex justify-end gap-3">
@@ -143,9 +129,7 @@ function WorkflowRow({ workflow, workspaceId }: { workflow: Workflow; workspaceI
           <Button
             variant="danger"
             disabled={remove.isPending}
-            onClick={() =>
-              remove.mutate(workflow.id, { onSuccess: () => setConfirming(false) })
-            }
+            onClick={() => remove.mutate(workflow.id, { onSuccess: () => setConfirming(false) })}
           >
             {remove.isPending ? "Deleting…" : "Delete"}
           </Button>
@@ -178,7 +162,7 @@ function CreateWorkflowModal({
   return (
     <Modal open={open} onClose={close} title="New workflow">
       <form
-        className="flex flex-col gap-6"
+        className="flex flex-col gap-5"
         onSubmit={(event) => {
           event.preventDefault();
           // An empty canvas is a valid save: the backend stores drafts on
@@ -225,14 +209,17 @@ function CreateWorkflowModal({
 
 function WorkflowListSkeleton() {
   return (
-    <div className="flex flex-col gap-px rounded-lg border border-carbon-lift p-5">
-      {[0, 1, 2].map((row) => (
-        <div key={row} className="flex items-center justify-between py-4">
-          <Skeleton className="h-4 w-56" />
-          <Skeleton className="h-3 w-20" />
-        </div>
+    <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {[0, 1, 2].map((card) => (
+        <li key={card}>
+          <Card className="flex h-40 flex-col gap-3">
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="mt-auto h-6 w-24" />
+          </Card>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -255,7 +242,10 @@ function relativeTime(iso: string): string {
   let value = seconds;
   for (const [unit, size] of steps) {
     if (Math.abs(value) < size) {
-      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(-Math.round(value), unit);
+      return new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
+        -Math.round(value),
+        unit,
+      );
     }
     value /= size;
   }

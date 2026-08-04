@@ -36,10 +36,11 @@ export default function LoginPage() {
   return (
     <AuthLayout
       title="Sign in"
+      subtitle="Pick up where you left off."
       footer={
         <>
           No account?{" "}
-          <Link href="/signup" className="text-bone hover:text-chalk">
+          <Link href="/signup" className="text-ink underline underline-offset-4">
             Create one
           </Link>
         </>
