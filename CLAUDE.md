@@ -569,9 +569,21 @@ at 0,0.
 a `Registry` that `main.go` merges in — the same shape `github` and `slack`
 will use. The engine knows the `Runner` interface and nothing about models.
 
-**Model calls are capped at 25s**, under the server's 30s write timeout, so a
-slow model is a real error rather than a response nobody is listening for.
-`DefaultModel` is one constant; a workflow that pinned a model keeps it.
+**An empty graph is rejected here even though `Validate` allows one.** An empty
+canvas is a legitimate thing for a *person* to save and never a legitimate
+answer from a model — `{"name": "deploy on merge"}` and nothing else would
+otherwise be a 200 opening a blank canvas, which reads as our bug rather than
+the model's.
+
+**The deadline lives on the caller's context, not on the HTTP client.** The two
+callers are not the same: generation answers an HTTP request and has to fit
+under the server's 30s write timeout (`generateTimeout`, 25s, covering both
+attempts), while an `ai.prompt` node has the engine's per-node budget and
+nobody waiting on a connection. A client timeout tuned for the first silently
+cut the second short — two mechanisms bounding one call is how that happens
+unnoticed. `openRouterBackstop` is 2 minutes and exists only so a caller that
+forgets a deadline cannot hang forever. `DefaultModel` is one constant; a
+workflow that pinned a model keeps it.
 
 ### The router takes a struct
 

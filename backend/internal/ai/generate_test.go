@@ -120,3 +120,27 @@ func TestStripFence(t *testing.T) {
 		}
 	}
 }
+
+// A model that answers with a name and no graph must not be a success. Validate
+// lets an empty graph through — an empty canvas is a legitimate thing for a
+// person to save — so this is the one place that has to say otherwise, or
+// generating opens a blank canvas and reads as our bug.
+func TestGenerateRejectsAGraphWithNoNodes(t *testing.T) {
+	cases := map[string]string{
+		"no graph key":       `{"name":"deploy on merge","description":"ships main"}`,
+		"empty graph":        `{"name":"deploy","graph":{"nodes":[],"edges":[]}}`,
+		"prose in the graph": `{"name":"deploy","graph":{"nodes":null,"edges":null}}`,
+	}
+	for name, reply := range cases {
+		t.Run(name, func(t *testing.T) {
+			provider := &stubProvider{replies: []string{reply, reply}}
+			_, err := NewService(provider, stubCreds{key: "k"}).GenerateWorkflow(t.Context(), "ws", "x")
+			if !errors.Is(err, ErrBadGraph) {
+				t.Fatalf("err = %v, want ErrBadGraph", err)
+			}
+			if !strings.Contains(provider.prompts[1], "no nodes") {
+				t.Fatalf("the retry did not say what was wrong: %q", provider.prompts[1])
+			}
+		})
+	}
+}

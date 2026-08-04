@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 )
@@ -26,6 +27,10 @@ type Generated struct {
 // generateTokens bounds one proposal. A workflow graph is small; a model
 // rambling past this is not producing one.
 const generateTokens = 4000
+
+// generateTimeout bounds both attempts together, under the API server's 30s
+// write timeout.
+const generateTimeout = 25 * time.Second
 
 // systemPrompt describes the graph the frontend already speaks. It lists only
 // node types that have a runner registered — advertising one the engine cannot
@@ -73,6 +78,18 @@ as possible with http.request and say so in the description.`
 // allowed here. What it must not be is malformed — a duplicate id or an edge
 // into nothing would break the editor rather than the run.
 func (s *Service) GenerateWorkflow(ctx context.Context, workspaceID, prompt string) (Generated, error) {
+	// The deadline belongs here rather than on the HTTP client, because this is
+	// the caller that answers a request: it has to fail before the API server's
+	// 30s write timeout, or it produces a response nobody is listening for. It
+	// covers the retry too — two attempts spilling past that window would leave
+	// the caller with a dead connection instead of an error.
+	//
+	// ponytail: generation is synchronous, so it lives inside one HTTP response
+	// and the retry is squeezed into that. If it needs longer, the upgrade is
+	// the 202-and-poll shape executions already use, not a bigger number here.
+	ctx, cancel := context.WithTimeout(ctx, generateTimeout)
+	defer cancel()
+
 	req := Request{
 		System:    systemPrompt,
 		Prompt:    prompt,
@@ -109,6 +126,13 @@ func parseGenerated(text string) (Generated, error) {
 	}
 	if err := generated.Graph.Validate(); err != nil {
 		return Generated{}, fmt.Errorf("%w: %v", ErrBadGraph, err)
+	}
+	// Validate lets an empty graph through on purpose — an empty canvas is a
+	// legitimate thing for a person to save. It is not a legitimate thing for a
+	// model to answer with: {"name": "deploy on merge"} and nothing else would
+	// otherwise be a 200 that opens a blank canvas, which reads as our bug.
+	if len(generated.Graph.Nodes) == 0 {
+		return Generated{}, fmt.Errorf("%w: the graph has no nodes", ErrBadGraph)
 	}
 	if strings.TrimSpace(generated.Name) == "" {
 		generated.Name = "Untitled workflow"

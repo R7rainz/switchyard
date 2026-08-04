@@ -11,7 +11,6 @@ import (
 // asked, which is how the retry is observed.
 type stubProvider struct {
 	replies []string
-	err     error
 	prompts []string
 	keys    []string
 }
@@ -19,9 +18,6 @@ type stubProvider struct {
 func (s *stubProvider) Complete(_ context.Context, key string, req Request) (Response, error) {
 	s.prompts = append(s.prompts, req.Prompt)
 	s.keys = append(s.keys, key)
-	if s.err != nil {
-		return Response{}, s.err
-	}
 	if len(s.replies) == 0 {
 		return Response{}, errors.New("stub: no reply queued")
 	}

@@ -18,17 +18,21 @@ type OpenRouter struct {
 	baseURL string
 }
 
-// openRouterTimeout bounds one call. It sits under the API server's 30s write
-// timeout so a slow model produces a real error rather than a response the
-// server has already given up on.
+// openRouterBackstop is a last resort, not the real bound.
 //
-// ponytail: a single timeout for every call. If long-form generation needs
-// more, the fix is an async job like executions, not a bigger number here.
-const openRouterTimeout = 25 * time.Second
+// Each caller sets its own deadline on the context, because they are not the
+// same: generation answers an HTTP request and has to fit under the server's
+// write timeout, while an ai.prompt node has the engine's per-node budget and
+// nobody waiting on a connection. A client timeout short enough for the first
+// would silently cut the second short — the two mechanisms bounding one call
+// is how that happens without anyone noticing.
+//
+// This exists only so a caller that forgets a deadline cannot hang forever.
+const openRouterBackstop = 2 * time.Minute
 
 func NewOpenRouter(client *http.Client) *OpenRouter {
 	if client == nil {
-		client = &http.Client{Timeout: openRouterTimeout}
+		client = &http.Client{Timeout: openRouterBackstop}
 	}
 	return &OpenRouter{client: client, baseURL: "https://openrouter.ai/api/v1"}
 }

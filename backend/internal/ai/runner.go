@@ -25,8 +25,10 @@ func (p *promptRunner) Run(ctx context.Context, in execution.Input) (execution.R
 		System string `json:"system"`
 		Model  string `json:"model"`
 	}
-	if err := json.Unmarshal(in.Data, &data); err != nil {
-		return execution.Result{}, fmt.Errorf("ai node data: %w", err)
+	if len(in.Data) > 0 {
+		if err := json.Unmarshal(in.Data, &data); err != nil {
+			return execution.Result{}, fmt.Errorf("ai node data: %w", err)
+		}
 	}
 	if data.Prompt == "" {
 		return execution.Result{}, fmt.Errorf("ai node needs a prompt")
