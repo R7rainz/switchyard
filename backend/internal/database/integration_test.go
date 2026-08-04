@@ -28,6 +28,13 @@ func testPool(t *testing.T) *Pool {
 		t.Skip("set SWITCHYARD_TEST_DATABASE_URL to run migration tests against a real database")
 	}
 
+	// These tests drop the public schema. Pointed at the development database
+	// that is every workflow, execution, and user gone, and the two URLs are
+	// similar enough to paste one where the other belongs.
+	if err := CheckTestURL(url, os.Getenv("DATABASE_URL")); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 

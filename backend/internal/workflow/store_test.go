@@ -166,6 +166,13 @@ func postgresStore(t *testing.T) *PostgresStore {
 		t.Skip("set SWITCHYARD_TEST_DATABASE_URL to run the Postgres store tests")
 	}
 
+	// These tests drop the public schema. Pointed at the development database
+	// that is every workflow, execution, and user gone, and the two URLs are
+	// similar enough to paste one where the other belongs.
+	if err := database.CheckTestURL(url, os.Getenv("DATABASE_URL")); err != nil {
+		t.Fatal(err)
+	}
+
 	ctx := context.Background()
 	// One connection, so the advisory lock below is held on it for the whole
 	// test rather than on whichever pooled session happened to take it.
