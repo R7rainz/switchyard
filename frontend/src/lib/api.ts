@@ -279,3 +279,105 @@ export const executions = {
       )
       .then((r) => r.data),
 };
+
+/** Cancel reaches only runs this process is executing; a finished run 409s. */
+export const cancelExecution = (workspaceId: string, executionId: string) =>
+  api
+    .post(`/api/workspaces/${workspaceId}/executions/${executionId}/cancel`)
+    .then(() => undefined);
+
+/**
+ * The four roles, strictly ordered. The backend's permission table is the
+ * authority — this list exists so a picker offers them in that order.
+ */
+export const roles = ["VIEWER", "MEMBER", "ADMIN", "OWNER"] as const;
+export type Role = (typeof roles)[number];
+
+export type Member = { userId: string; role: Role; createdAt: string };
+
+export type Invite = {
+  id: string;
+  role: Role;
+  email: string;
+  link: boolean;
+  maxUses: number;
+  useCount: number;
+  invitedBy: string;
+  createdAt: string;
+  expiresAt?: string;
+};
+
+export const members = {
+  list: (workspaceId: string) =>
+    api
+      .get<{ members: Member[] }>(`/api/workspaces/${workspaceId}/members`)
+      .then((r) => r.data.members),
+
+  setRole: (workspaceId: string, userId: string, role: Role) =>
+    api.patch(`/api/workspaces/${workspaceId}/members/${userId}`, { role }).then(() => undefined),
+
+  remove: (workspaceId: string, userId: string) =>
+    api.delete(`/api/workspaces/${workspaceId}/members/${userId}`).then(() => undefined),
+};
+
+export const invites = {
+  list: (workspaceId: string) =>
+    api
+      .get<{ invites: Invite[] }>(`/api/workspaces/${workspaceId}/invites`)
+      .then((r) => r.data.invites),
+
+  /**
+   * The token comes back exactly once. Only its hash is stored, so it cannot be
+   * shown again — re-sharing a link means revoke and re-issue.
+   */
+  create: (workspaceId: string, body: { role: Role; email?: string; maxUses?: number }) =>
+    api
+      .post<{ invite: Invite; token: string; joinURL: string }>(
+        `/api/workspaces/${workspaceId}/invites`,
+        body,
+      )
+      .then((r) => r.data),
+
+  revoke: (workspaceId: string, inviteId: string) =>
+    api.delete(`/api/workspaces/${workspaceId}/invites/${inviteId}`).then(() => undefined),
+
+  accept: (token: string) =>
+    api.post<Workspace>(`/api/invites/${token}/accept`).then((r) => r.data),
+};
+
+/**
+ * A stored key, described but never returned.
+ *
+ * There is no endpoint that hands a secret back — deliberately. So this is
+ * write, list-metadata, and delete; replacing a secret is how you rotate one.
+ */
+export type Credential = {
+  provider: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const credentials = {
+  list: (workspaceId: string) =>
+    api
+      .get<{ credentials: Credential[] }>(`/api/workspaces/${workspaceId}/credentials`)
+      .then((r) => r.data.credentials),
+
+  /** Replaces whatever was held under the same provider and name. */
+  put: (workspaceId: string, provider: string, name: string, secret: string) =>
+    api
+      .put(`/api/workspaces/${workspaceId}/credentials/${provider}/${name}`, { secret })
+      .then(() => undefined),
+
+  remove: (workspaceId: string, provider: string, name: string) =>
+    api
+      .delete(`/api/workspaces/${workspaceId}/credentials/${provider}/${name}`)
+      .then(() => undefined),
+};
+
+/**
+ * Where the AI service looks for its key. A secret stored under this provider
+ * and name is what makes generation and ai.prompt nodes work.
+ */
+export const AI_CREDENTIAL = { provider: "openrouter", name: "default" } as const;

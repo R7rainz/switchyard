@@ -1,12 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 
 import { AuthFields, AuthLayout } from "@/components/auth-form";
 import { enterApp, signIn } from "@/lib/auth-client";
 
 export default function LoginPage() {
+  // Suspense because useSearchParams opts the page into client rendering, and
+  // Next requires the boundary for it during prerender.
+  return (
+    <Suspense fallback={null}>
+      <LoginPageForm />
+    </Suspense>
+  );
+}
+
+function LoginPageForm() {
+  // Where to land afterwards. An invite link sends people through here and
+  // needs them back, so the destination travels rather than being assumed.
+  const next = useSearchParams().get("next");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -28,7 +42,7 @@ export default function LoginPage() {
     }
     // Deliberately leaves pending set: the page is on its way out, and
     // flipping the button back to "Sign in" first reads as a failure.
-    enterApp();
+    enterApp(next ?? undefined);
   }
 
   return (

@@ -33,7 +33,13 @@ import {
   type WorkflowNode,
 } from "@/lib/api";
 import { specFor } from "@/lib/node-types";
-import { useExecutions, useStartExecution, useWorkflow, useWorkspace } from "@/lib/queries";
+import {
+  useCancelExecution,
+  useExecutions,
+  useStartExecution,
+  useWorkflow,
+  useWorkspace,
+} from "@/lib/queries";
 
 /**
  * The builder.
@@ -86,6 +92,7 @@ function Builder({
 
   const selected = nodes.find((node) => node.selected);
   const start = useStartExecution(workspaceId);
+  const cancel = useCancelExecution(workspaceId);
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
 
@@ -148,6 +155,20 @@ function Builder({
 
         <SaveState saving={saving} error={saveError} dirty={dirty} />
         {lastRun && <RunStatus status={lastRun.status} />}
+
+        {lastRun?.status === "RUNNING" && (
+          // Cancel reaches only runs this process is executing. One that
+          // finished a moment ago answers 409, which is honest rather than an
+          // error worth showing.
+          <Button
+            variant="neutral"
+            className="h-9"
+            disabled={cancel.isPending}
+            onClick={() => cancel.mutate(lastRun.id)}
+          >
+            {cancel.isPending ? "Cancelling…" : "Cancel"}
+          </Button>
+        )}
 
         <Button
           className="h-9"
