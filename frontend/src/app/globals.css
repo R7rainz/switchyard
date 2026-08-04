@@ -71,6 +71,20 @@
   --radius-lg: 8px;
   --radius-xl: 12px;
 
+  /*
+   * Loops for the capability cards. Every one moves transform or opacity only —
+   * DESIGN.md is explicit that motion never animates layout properties, and a
+   * width or height keyframe is what forces a re-layout every frame.
+   *
+   * Each ends on a sensible resting state, because reduced motion below runs
+   * them once and stops rather than leaving a frozen mid-frame.
+   */
+  --animate-travel: travel 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-branch-a: branch-a 4s ease-in-out infinite;
+  --animate-branch-b: branch-b 4s ease-in-out infinite;
+  --animate-emit: emit 2.6s ease-in-out infinite;
+  --animate-arrive: arrive 2.6s ease-in-out infinite;
+
   --shadow-hairline: rgba(17, 17, 17, 0.05) 0px 0px 0px 1px inset;
   --shadow-card:
     rgba(17, 17, 17, 0.02) 0px -6px 6px 0px, rgba(17, 17, 17, 0.01) 0px -23px 9px 0px;
@@ -80,6 +94,36 @@
   --shadow-featured:
     rgba(17, 17, 17, 0.12) 0px 26px 60px -6px, rgba(17, 17, 17, 0.02) 0px 28px 28px -14px,
     rgba(17, 17, 17, 0.04) 0px 6px 6px -3px, rgba(17, 17, 17, 0.04) 0px 1px 1px -0.5px;
+}
+
+/* A dot crossing an edge: the run moving from one node to the next. */
+@keyframes travel {
+  0% { transform: translateX(0); opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { transform: translateX(var(--travel-distance, 64px)); opacity: 0; }
+}
+
+/* Two outputs of a condition, taking turns. */
+@keyframes branch-a {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0.25; }
+}
+@keyframes branch-b {
+  0%, 45% { opacity: 0.25; }
+  55%, 100% { opacity: 1; }
+}
+
+/* A response forming, one line at a time. Scale rather than width. */
+@keyframes emit {
+  0%, 10% { transform: scaleX(0); }
+  45%, 100% { transform: scaleX(1); }
+}
+
+/* Something coming back: a status landing after the request went out. */
+@keyframes arrive {
+  0%, 55% { opacity: 0; transform: scale(0.9); }
+  70%, 100% { opacity: 1; transform: scale(1); }
 }
 
 @layer base {
@@ -163,6 +207,10 @@
     *::before,
     *::after {
       animation-duration: 0.01ms !important;
+      /* Run once and stop. Without this a looping animation restarts thousands
+         of times a second and settles on an arbitrary frame instead of the
+         resting state its last keyframe describes. */
+      animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
   }

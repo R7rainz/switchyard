@@ -4,22 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
+import { Capabilities } from "@/components/capabilities";
 import { PhoenixGradient } from "@/components/gradient";
 import { HeroGraph } from "@/components/hero-graph";
-import { Badge, Button, Eyebrow, PastelCard, Splash, Wordmark } from "@/components/ui";
+import { Reveal } from "@/components/reveal";
+import { Badge, Button, Eyebrow, Splash, Wordmark } from "@/components/ui";
 import { useSession } from "@/lib/auth-client";
-
-/**
- * The five pastels are a taxonomy, not decoration. Here they name the node
- * families the engine actually ships, so the colour a capability wears on this
- * page is the colour it wears on the canvas.
- */
-const capabilities = [
-  { tone: "canary", title: "Triggers", body: "Manual, webhook, or a schedule. Exactly one starts a run." },
-  { tone: "mint", title: "Logic", body: "Conditions split the run down a named branch, and the path not taken is recorded." },
-  { tone: "violet", title: "AI", body: "Ask a model mid-run. Its answer flows into the next node." },
-  { tone: "pink", title: "HTTP", body: "Call anything. Status and body come back, even when it fails." },
-] as const;
 
 export default function Home() {
   const router = useRouter();
@@ -98,19 +88,14 @@ export default function Home() {
       {/* Light band after the gradient — the alternating rhythm the system asks
           for, at application distance rather than 120px marketing gaps. */}
       <section className="mx-auto max-w-[1200px] px-6 py-20">
-        <Eyebrow>What it runs</Eyebrow>
-        <h2 className="mt-4 max-w-2xl text-heading-sm text-ink sm:text-heading">
-          Every node is one you can open, read, and change.
-        </h2>
+        <Reveal>
+          <Eyebrow>What it runs</Eyebrow>
+          <h2 className="mt-4 max-w-2xl text-heading-sm text-ink sm:text-heading">
+            Every node is one you can open, read, and change.
+          </h2>
+        </Reveal>
 
-        <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {capabilities.map((item) => (
-            <PastelCard key={item.title} tone={item.tone} className="flex min-h-44 flex-col justify-between gap-6">
-              <span className="text-body-lg">{item.title}</span>
-              <span className="text-body-sm leading-relaxed text-ink/70">{item.body}</span>
-            </PastelCard>
-          ))}
-        </div>
+        <Capabilities />
       </section>
 
       {/* The dark counterweight. One per page, at the bottom, as the closer. */}
