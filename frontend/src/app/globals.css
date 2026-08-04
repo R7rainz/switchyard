@@ -1,1 +1,132 @@
 @import "tailwindcss";
+
+/*
+ * Tokens from DESIGN.md, verbatim.
+ *
+ * That document is a marketing-site reference — hero, trust bar, pricing nav,
+ * 96px section rhythm. What carries over to an application is everything below:
+ * the palette, the type scale, the surfaces, the motion. What does not is the
+ * page rhythm, because a control surface is read at a desk, not scrolled. App
+ * density uses the 24-40px steps of the same scale.
+ */
+@theme {
+  --color-obsidian-canvas: #101010;
+  --color-carbon-lift: #1d1a18;
+  --color-ash-stroke: #3d3a39;
+  --color-graphite-mid: #4d4947;
+  --color-warm-granite: #8a8380;
+  --color-pale-stone: #b8b3b0;
+  --color-bone: #eeeeee;
+  --color-chalk: #fafafa;
+  --color-signal-orange: #ee6018;
+  --color-metric-green: #a0ca92;
+
+  /*
+   * The geist package puts --font-geist-sans and --font-geist-mono on <html>.
+   * These are named for the utilities they generate (font-sans, font-mono) and
+   * point at those, rather than reusing the same names and referring to
+   * themselves.
+   */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-caption: 12px;
+  --text-caption--line-height: 1;
+  --text-caption--letter-spacing: -0.24px;
+  --text-body-sm: 14px;
+  --text-body-sm--line-height: 1.43;
+  --text-body: 16px;
+  --text-body--line-height: 1.5;
+  --text-heading: 36px;
+  --text-heading--line-height: 1.1;
+  --text-heading--letter-spacing: -1.12px;
+  --text-heading-lg: 44px;
+  --text-heading-lg--line-height: 1.12;
+  --text-heading-lg--letter-spacing: -1.1px;
+  --text-display: 72px;
+  --text-display--line-height: 1;
+  --text-display--letter-spacing: -2.88px;
+
+  --radius-sm: 3px;
+  --radius-lg: 10px;
+  --radius-2xl: 20px;
+}
+
+/*
+ * Motion is short and mechanical - the feel of a CLI tool, not a marketing
+ * site. Colour, background, border, and stroke move together so a state change
+ * reads as one switch flipping rather than a layered animation.
+ */
+@layer base {
+  :root {
+    --ease-switch: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  * {
+    border-color: var(--color-ash-stroke);
+  }
+
+  html {
+    background: var(--color-obsidian-canvas);
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--color-obsidian-canvas);
+    color: var(--color-bone);
+    font-family: var(--font-sans);
+    font-weight: 400;
+    font-size: var(--text-body-sm);
+    line-height: 1.43;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /*
+   * The system speaks at weight 400 with tight tracking. Browsers bold headings
+   * and <strong> by default, and that breaks the voice everywhere at once.
+   */
+  h1,
+  h2,
+  h3,
+  h4,
+  strong,
+  b,
+  th {
+    font-weight: 400;
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    transition-property: color, background-color, border-color, fill, stroke, opacity;
+    transition-duration: 0.15s;
+    transition-timing-function: var(--ease-switch);
+  }
+
+  ::selection {
+    background: var(--color-signal-orange);
+    color: var(--color-obsidian-canvas);
+  }
+
+  /* Keyboard focus has to be visible on both surfaces the system uses. */
+  :focus-visible {
+    outline: 1px solid var(--color-signal-orange);
+    outline-offset: 2px;
+  }
+
+  /* The dialog element does the modal work; only its backdrop needs styling. */
+  dialog::backdrop {
+    background: rgb(16 16 16 / 0.72);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

@@ -45,6 +45,24 @@ export function apiError(err: unknown): string {
 }
 
 /**
+ * A workspace owns everything: workflows, executions, credentials. Access is a
+ * membership question, so every path below is scoped to one.
+ *
+ * Listing creates a personal workspace for an account that has none, so the
+ * frontend never has to handle "signed in but nowhere to be".
+ */
+export type Workspace = {
+  id: string;
+  name: string;
+  slug: string;
+  createdAt: string;
+};
+
+export const workspaces = {
+  list: () => api.get<{ workspaces: Workspace[] }>("/api/workspaces").then((r) => r.data.workspaces),
+};
+
+/**
  * A workflow graph, in React Flow's shape.
  *
  * These are the field names `useNodesState` and `useEdgesState` already hold,
