@@ -257,8 +257,14 @@ domain package declares its own `Store` interface and its own SQL. Putting
 every query in one package is how it becomes the package everything imports and
 nothing can be tested without.
 
-Integration tests need a database and skip without one. It drops and recreates
-the `public` schema, so never point it at anything you care about:
+Integration tests need a database and skip without one. They drop and recreate
+the `public` schema, so **`database.CheckTestURL` refuses to run when
+`SWITCHYARD_TEST_DATABASE_URL` resolves to the same database as
+`DATABASE_URL`** — same host and database name, comparing where the URLs land
+rather than how they are spelled, so `localhost` and `127.0.0.1` and a stray
+`?sslmode=` do not slip past. That guard exists because the two strings are
+similar enough to paste one where the other belongs, and doing so once cost
+this project its development database. Point them at a throwaway:
 
     SWITCHYARD_TEST_DATABASE_URL=postgres://postgres:t@localhost:55433/switchyard \
       go test ./internal/database/
@@ -503,9 +509,16 @@ pins it.
 
 **Runners live with their integration.** `Registry` maps a node type to a
 `Runner`; GitHub nodes belong in `internal/github` and so on. `Builtin` holds
-only the ones needing nothing but stdlib — triggers, `logic.condition`, and
-`http.request` — because a package containing one function is ceremony, not a
-boundary. **An unregistered node type fails its run** with a message naming the
+only the ones needing nothing but stdlib — triggers, `logic.condition`,
+`variable.set`, and `http.request` — because a package containing one function
+is ceremony, not a boundary.
+
+**`variable.set` computes nothing.** The template layer has already substituted
+its data; it only decides what the node's output is. Its `values` object
+*becomes* the output, so a reference is `.nodes.<id>.<name>` — the same shape as
+every other node, not a wrapper only this type has. `values` must be an object:
+a list or a scalar would fail later inside a template, naming the node that
+referred to it rather than the node that is wrong. **An unregistered node type fails its run** with a message naming the
 type; silently doing nothing is the one outcome an engine must never have.
 
 **`Reclaim` runs at startup, before the server listens.** A process that dies
