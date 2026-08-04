@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 
 import { PhoenixGradient } from "@/components/gradient";
+import { HeroGraph } from "@/components/hero-graph";
 import { Badge, Button, Eyebrow, PastelCard, Splash, Wordmark } from "@/components/ui";
 import { useSession } from "@/lib/auth-client";
 
@@ -53,7 +54,8 @@ export default function Home() {
             </div>
           </nav>
 
-          <div className="flex flex-col items-start gap-8 py-24 sm:py-32">
+          <div className="grid items-center gap-12 py-20 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] lg:gap-16 lg:py-24">
+            <div className="flex flex-col items-start gap-7">
             <Badge>
               <span aria-hidden className="size-1.5 rounded-full bg-phoenix-orange" />
               Workflow automation for engineers
@@ -61,27 +63,34 @@ export default function Home() {
 
             {/* Weight 900 uppercase at display size: the poster moment, used
                 once on the whole site. Everything else is weight 400. */}
-            <h1 className="max-w-4xl text-heading-lg font-black uppercase text-ink sm:text-display">
+            <h1 className="text-heading font-black uppercase text-ink sm:text-heading-lg">
               AI drafts the route.
               <br />
               You throw the switches.
             </h1>
 
-            <p className="max-w-md text-body-lg text-ink/70">
+            <p className="max-w-md text-body-sm leading-relaxed text-ink/70 sm:text-body">
               Describe a workflow in plain language. Switchyard turns it into a graph you can read,
               edit, and run — and shows you exactly what happened when it did.
             </p>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Link href="/signup">
-                <Button className="h-12 px-6">Create an account</Button>
-              </Link>
-              <Link href="/login">
-                <Button variant="neutral" className="h-12 px-6">
-                  Sign in
-                </Button>
-              </Link>
+                <Link href="/signup">
+                  <Button className="h-12 px-6">Create an account</Button>
+                </Link>
+                <Link href="/login">
+                  <Button variant="neutral" className="h-12 px-6">
+                    Sign in
+                  </Button>
+                </Link>
+              </div>
             </div>
+
+            {/* The product, running. DESIGN.md's imagery guidance is UI-in-UI:
+                showing the thing is the picture. Everything this panel does —
+                dependency order, a branch taken, the other recorded skipped —
+                is behaviour the engine actually has. */}
+            <HeroGraph />
           </div>
         </div>
       </section>

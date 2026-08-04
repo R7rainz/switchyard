@@ -4,12 +4,12 @@ import { Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
+import { GraphPreview } from "@/components/graph-preview";
 import { Modal } from "@/components/modal";
 import {
   Badge,
   Button,
   Card,
-  EmptyState,
   ErrorNote,
   Eyebrow,
   Field,
@@ -18,6 +18,7 @@ import {
   Textarea,
 } from "@/components/ui";
 import { apiError, type Workflow } from "@/lib/api";
+import { paletteFor } from "@/lib/categories";
 import {
   emptyGraph,
   useCreateWorkflow,
@@ -25,6 +26,26 @@ import {
   useWorkflows,
   useWorkspace,
 } from "@/lib/queries";
+
+/**
+ * The shape drawn on the empty state. Not a saved workflow — it exists to show
+ * what one looks like, using the same renderer a real one gets.
+ */
+const exampleGraph = {
+  nodes: [
+    { id: "t", type: "trigger.manual", position: { x: 0, y: 60 } },
+    { id: "f", type: "http.request", position: { x: 120, y: 60 } },
+    { id: "c", type: "logic.condition", position: { x: 240, y: 60 } },
+    { id: "a", type: "ai.prompt", position: { x: 360, y: 0 } },
+    { id: "s", type: "http.request", position: { x: 360, y: 120 } },
+  ],
+  edges: [
+    { id: "e1", source: "t", target: "f" },
+    { id: "e2", source: "f", target: "c" },
+    { id: "e3", source: "c", target: "a", sourceHandle: "true" },
+    { id: "e4", source: "c", target: "s", sourceHandle: "false" },
+  ],
+};
 
 export default function WorkflowsPage() {
   const { workspace } = useWorkspace();
@@ -55,11 +76,19 @@ export default function WorkflowsPage() {
           ))}
         </ul>
       ) : (
-        <EmptyState
-          title="No workflows yet"
-          hint="A workflow is a graph of nodes: a trigger, some steps, and the edges between them. Start with an empty canvas, or describe one and let AI draft it."
-          action={<Button onClick={() => setCreating(true)}>Create the first one</Button>}
-        />
+        <div className="flex flex-col items-center gap-6 rounded-xl bg-cream-wash px-6 py-16 text-center">
+          {/* Drawn, not described. The shape of the thing is the fastest way to
+              say what a workflow is. */}
+          <GraphPreview graph={exampleGraph} className="h-28 w-full max-w-sm" />
+          <div className="flex flex-col items-center gap-3">
+            <p className="text-subheading text-ink">No workflows yet</p>
+            <p className="max-w-md text-body-sm leading-relaxed text-ash">
+              A workflow is a trigger, some steps, and the edges between them. Start with an empty
+              canvas, or describe one and let AI draft it.
+            </p>
+          </div>
+          <Button onClick={() => setCreating(true)}>Create the first one</Button>
+        </div>
       )}
 
       <CreateWorkflowModal
@@ -81,12 +110,26 @@ export default function WorkflowsPage() {
 function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspaceId: string }) {
   const remove = useDeleteWorkflow(workspaceId);
   const [confirming, setConfirming] = useState(false);
-  const nodes = workflow.graph.nodes.length;
+
+  // Which node families this workflow uses, in first-seen order, deduped.
+  const families = [...new Map(
+    workflow.graph.nodes.map((node) => {
+      const palette = paletteFor(node.type);
+      return [palette.label, palette];
+    }),
+  ).values()];
 
   return (
     <li>
-      <Card className="group flex h-full min-h-40 flex-col gap-3">
-        <div className="flex items-start justify-between gap-3">
+      <Card className="group flex h-full flex-col gap-4 p-0">
+        {/* The graph, not a node count. Two workflows called "deploy" read
+            identically by name and differently by shape, and recognising one
+            is the entire job of this screen. */}
+        <div className="rounded-t-xl bg-cream-wash px-4 py-4">
+          <GraphPreview graph={workflow.graph} className="h-24 w-full" />
+        </div>
+
+        <div className="flex items-start justify-between gap-3 px-5">
           {/* Not a link yet: the page this opens is the builder, and a card
               that navigates to a 404 is worse than one that does not. */}
           <span className="text-body-lg text-ink">{workflow.name}</span>
@@ -103,16 +146,24 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
         </div>
 
         {workflow.description && (
-          <p className="line-clamp-2 text-body-sm leading-relaxed text-ash">
+          <p className="line-clamp-2 px-5 text-body-sm leading-relaxed text-ash">
             {workflow.description}
           </p>
         )}
 
-        <div className="mt-auto flex items-center gap-2">
-          <Badge tone={nodes > 0 ? "mint" : undefined}>
-            {nodes} {nodes === 1 ? "node" : "nodes"}
-          </Badge>
-          <Eyebrow>{relativeTime(workflow.updatedAt)}</Eyebrow>
+        <div className="mt-auto flex flex-wrap items-center gap-2 px-5 pb-5">
+          {/* One badge per node family present, in the colour that family
+              wears everywhere else. An empty draft says so plainly. */}
+          {families.length > 0 ? (
+            families.map((family) => (
+              <Badge key={family.label} tone={family.tone}>
+                {family.label}
+              </Badge>
+            ))
+          ) : (
+            <Badge>Empty draft</Badge>
+          )}
+          <Eyebrow className="ml-auto">{relativeTime(workflow.updatedAt)}</Eyebrow>
         </div>
       </Card>
 
