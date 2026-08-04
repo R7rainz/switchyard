@@ -218,3 +218,39 @@ export async function watchExecution(
 
   return () => socket.close();
 }
+
+/**
+ * A run. The graph snapshot is deliberately absent from the list response — it
+ * is the largest field by far, and a dashboard draws a row, not a canvas.
+ */
+export type Execution = {
+  id: string;
+  workflowId?: string;
+  status: ExecutionStatus;
+  trigger: string;
+  error?: string;
+  startedBy?: string;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  /** Computed server-side, so every client agrees on what a run took. */
+  durationMs?: number;
+};
+
+export const executions = {
+  /** Newest first. An empty workflowId means every run in the workspace. */
+  list: (workspaceId: string, options: { workflowId?: string; limit?: number } = {}) =>
+    api
+      .get<{ executions: Execution[] }>(`/api/workspaces/${workspaceId}/executions`, {
+        params: { workflowId: options.workflowId, limit: options.limit },
+      })
+      .then((r) => r.data.executions),
+
+  start: (workspaceId: string, workflowId: string, input?: unknown) =>
+    api
+      .post<Execution>(
+        `/api/workspaces/${workspaceId}/workflows/${workflowId}/executions`,
+        input === undefined ? undefined : { input },
+      )
+      .then((r) => r.data),
+};
