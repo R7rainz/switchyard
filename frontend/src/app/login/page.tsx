@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthFields, AuthLayout } from "@/components/auth-form";
-import { signIn } from "@/lib/auth-client";
+import { enterApp, signIn } from "@/lib/auth-client";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -23,14 +21,14 @@ export default function LoginPage() {
       password: String(form.get("password")),
     });
 
-    setPending(false);
     if (result.error) {
+      setPending(false);
       setError(result.error.message ?? "Sign in failed");
       return;
     }
-    router.push("/workflows");
-    // refresh() so any server component re-reads the new session cookie.
-    router.refresh();
+    // Deliberately leaves pending set: the page is on its way out, and
+    // flipping the button back to "Sign in" first reads as a failure.
+    enterApp();
   }
 
   return (

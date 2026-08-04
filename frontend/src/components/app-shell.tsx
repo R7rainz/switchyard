@@ -1,10 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { signOut } from "@/lib/auth-client";
+import { leaveApp, signOut } from "@/lib/auth-client";
 import { useWorkspace } from "@/lib/queries";
 
 import { Button, Eyebrow, Skeleton, Wordmark, cx } from "./ui";
@@ -21,7 +21,6 @@ const links = [{ href: "/workflows", label: "Workflows" }];
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
   const { workspace } = useWorkspace();
 
   return (
@@ -61,8 +60,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="h-9"
               onClick={async () => {
                 await signOut();
-                router.push("/");
-                router.refresh();
+                leaveApp();
               }}
             >
               Sign out

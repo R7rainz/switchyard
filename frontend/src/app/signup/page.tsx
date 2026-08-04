@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { AuthFields, AuthLayout } from "@/components/auth-form";
-import { signUp } from "@/lib/auth-client";
+import { enterApp, signUp } from "@/lib/auth-client";
 
 export default function SignupPage() {
-  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
@@ -24,15 +22,14 @@ export default function SignupPage() {
       password: String(form.get("password")),
     });
 
-    setPending(false);
     if (result.error) {
+      setPending(false);
       setError(result.error.message ?? "Sign up failed");
       return;
     }
     // Better Auth signs the new user in, and listing workspaces creates their
     // personal one, so the dashboard is ready by the time they arrive.
-    router.push("/workflows");
-    router.refresh();
+    enterApp();
   }
 
   return (
