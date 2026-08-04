@@ -19,6 +19,7 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
+	"github.com/R7rainz/switchyard/backend/internal/websocket"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 	"github.com/R7rainz/switchyard/backend/migrations"
@@ -93,8 +94,15 @@ func main() {
 	// GitHub and Slack will arrive.
 	runners := execution.Builtin(nil)
 	runners.Add(ai.Runners(assistant))
+
+	// The hub is handed to the engine as a Publisher and to the router as an
+	// EventStream. Neither package imports the other — the engine announces
+	// progress to an interface it declares, and this is the only place that
+	// knows both halves are the same object.
+	events := websocket.NewHub(cfg.AuthIssuer)
 	executions := execution.NewService(
-		execution.NewPostgresStore(pool), workflows, runners, execution.Options{})
+		execution.NewPostgresStore(pool), workflows, runners,
+		execution.Options{Events: events})
 
 	// A process that died mid-run left rows nothing will ever finish. Doing
 	// this before the server listens means no request can ever see a run that
@@ -111,7 +119,7 @@ func main() {
 	// has to send someone: accepting needs a signed-in user, which only the
 	// frontend can produce.
 	server := &http.Server{
-		Addr:    cfg.Addr,
+		Addr: cfg.Addr,
 		Handler: api.NewRouter(api.Deps{
 			Verifier:    verifier,
 			Logger:      logger,
@@ -120,6 +128,7 @@ func main() {
 			Workflows:   workflows,
 			Executions:  executions,
 			AI:          assistant,
+			Events:      events,
 			AppURL:      cfg.AuthIssuer,
 		}),
 		// Bound how long a connection can sit half-open holding a slot.
