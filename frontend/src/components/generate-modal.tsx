@@ -7,7 +7,7 @@ import { GraphPreview } from "./graph-preview";
 import { Modal } from "./modal";
 import { Button, ErrorNote, Eyebrow, Field, Textarea } from "./ui";
 import { apiError, type Generated } from "@/lib/api";
-import { useCreateWorkflow, useGenerateWorkflow } from "@/lib/queries";
+import { useCreateWorkflow, useGenerateWorkflow, useSubmitWorkflowFeedback } from "@/lib/queries";
 
 /**
  * Describe a workflow, look at what came back, then decide.
@@ -30,16 +30,27 @@ export function GenerateModal({
   const router = useRouter();
   const generate = useGenerateWorkflow(workspaceId);
   const create = useCreateWorkflow(workspaceId);
+  const feedback = useSubmitWorkflowFeedback(workspaceId);
 
   const [prompt, setPrompt] = useState("");
   const [proposal, setProposal] = useState<Generated | null>(null);
+  const [shareFeedback, setShareFeedback] = useState(false);
 
   function close() {
     generate.reset();
     create.reset();
     setPrompt("");
     setProposal(null);
+    setShareFeedback(false);
     onClose();
+  }
+
+  function rejectProposal() {
+    if (proposal && shareFeedback) {
+      feedback.mutate({ consent: true, prompt, outcome: "rejected", generated: proposal });
+    }
+    setProposal(null);
+    setShareFeedback(false);
   }
 
   return (
@@ -65,10 +76,23 @@ export function GenerateModal({
             is a draft, and the model does not know your endpoints or your keys.
           </p>
 
+          <label className="flex items-start gap-3 text-caption leading-relaxed text-ash">
+            <input
+              type="checkbox"
+              checked={shareFeedback}
+              onChange={(event) => setShareFeedback(event.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-ink"
+            />
+            <span>
+              Share this draft with Switchyard to improve workflow generation. Common credential
+              fields are redacted; remove sensitive details before opting in.
+            </span>
+          </label>
+
           {create.error && <ErrorNote>{apiError(create.error)}</ErrorNote>}
 
           <div className="flex flex-wrap justify-end gap-3">
-            <Button variant="ghost" onClick={() => setProposal(null)}>
+            <Button variant="ghost" onClick={rejectProposal}>
               Try again
             </Button>
             <Button
@@ -84,6 +108,15 @@ export function GenerateModal({
                     // Straight onto the canvas: the point is that it gets read
                     // and edited before anyone runs it.
                     onSuccess: (saved) => {
+                      if (shareFeedback) {
+                        feedback.mutate({
+                          consent: true,
+                          prompt,
+                          outcome: "accepted",
+                          generated: proposal,
+                          finalGraph: proposal.graph,
+                        });
+                      }
                       close();
                       router.push(`/workflows/${saved.id}`);
                     },
