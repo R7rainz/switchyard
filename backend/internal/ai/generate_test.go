@@ -30,6 +30,12 @@ func TestGenerateWorkflow(t *testing.T) {
 	if provider.keys[0] != "sk-test" {
 		t.Fatalf("the workspace's key did not reach the provider: %q", provider.keys[0])
 	}
+	if provider.requests[0].JSONSchema == nil || provider.requests[0].JSONSchema.Name != "switchyard_workflow" {
+		t.Fatalf("generation did not request the workflow schema: %+v", provider.requests[0].JSONSchema)
+	}
+	if !provider.requests[0].JSONSchema.Strict {
+		t.Fatal("generation schema should be strict")
+	}
 }
 
 // A model that answers with something unusable gets one more go, told what was
