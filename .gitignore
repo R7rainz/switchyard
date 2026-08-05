@@ -22,3 +22,5 @@ node_modules/
 .idea/
 *.swp
 .gstack/
+
+.claude/
