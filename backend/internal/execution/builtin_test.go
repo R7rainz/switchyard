@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -119,7 +120,15 @@ func TestHTTPRunner(t *testing.T) {
 	}))
 	defer server.Close()
 
-	runner := &httpRunner{client: server.Client()}
+	// The test server is intentionally loopback. Give the runner a fake public
+	// resolution so this test exercises HTTP handling without weakening the
+	// production SSRF policy.
+	runner := &httpRunner{
+		client: server.Client(),
+		lookupIP: func(context.Context, string) ([]net.IP, error) {
+			return []net.IP{net.ParseIP("93.184.216.34")}, nil
+		},
+	}
 
 	t.Run("decodes a JSON response for downstream nodes", func(t *testing.T) {
 		data := `{"method":"post","url":"` + server.URL + `","headers":{"X-Token":"abc"},"body":{"hello":"world"}}`
