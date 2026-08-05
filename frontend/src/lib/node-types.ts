@@ -45,6 +45,12 @@ export const nodeSpecs: NodeSpec[] = [
     fields: [],
   },
   {
+    type: "trigger.github.pull_request",
+    label: "GitHub pull request",
+    summary: "Starts when GitHub sends the selected pull-request event.",
+    fields: [{ key: "action", label: "Action", kind: "select", options: ["opened", "reopened", "synchronize"] }],
+  },
+  {
     type: "trigger.schedule",
     label: "Schedule",
     summary: "Started on a schedule.",
@@ -121,6 +127,22 @@ export const nodeSpecs: NodeSpec[] = [
         hint: "Leave empty to use the workspace default.",
       },
     ],
+  },
+  {
+    type: "github.pull_request",
+    label: "Get pull request",
+    summary: "Reads pull-request details using the workspace GitHub token.",
+    fields: [
+      { key: "owner", label: "Owner", kind: "text", placeholder: "{{ .trigger.repository.owner.login }}", hint: templateHint },
+      { key: "repo", label: "Repository", kind: "text", placeholder: "{{ .trigger.repository.name }}", hint: templateHint },
+      { key: "number", label: "Pull request", kind: "text", placeholder: "{{ .trigger.number }}", hint: templateHint },
+    ],
+  },
+  {
+    type: "slack.message",
+    label: "Send Slack message",
+    summary: "Posts a message through the workspace incoming webhook.",
+    fields: [{ key: "text", label: "Message", kind: "textarea", placeholder: "PR #{{ .nodes.pr.number }}: {{ .nodes.summary.text }}", hint: templateHint }],
   },
 ];
 

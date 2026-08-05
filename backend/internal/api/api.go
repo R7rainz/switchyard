@@ -83,6 +83,8 @@ func NewRouter(deps Deps) http.Handler {
 	flows := &workflowAPI{workflows: deps.Workflows}
 	runs := &executionAPI{executions: deps.Executions, events: deps.Events}
 	assist := &aiAPI{ai: deps.AI}
+	githubHooks := &githubWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
+	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 
 	router.Route("/api", func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
