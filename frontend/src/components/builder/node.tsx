@@ -110,9 +110,12 @@ export const nodeTypes = Object.fromEntries(
     "trigger.manual",
     "trigger.webhook",
     "trigger.schedule",
+    "trigger.github.pull_request",
     "logic.condition",
     "variable.set",
     "http.request",
     "ai.prompt",
+    "github.pull_request",
+    "slack.message",
   ].map((type) => [type, BuilderNode]),
 );

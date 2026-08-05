@@ -57,6 +57,7 @@ Node types:
 - trigger.manual    {"label"}                     started by a person. Prefer this.
 - trigger.webhook   {"label"}                     started by an inbound call.
 - trigger.schedule  {"label", "cron"}             started on a schedule.
+- trigger.github.pull_request {"label", "action"}  starts on a signed GitHub pull_request delivery.
 - logic.condition   {"label", "value"}            value renders to true/false. It must
                     have two outgoing edges, with sourceHandle "true" and "false".
 - variable.set      {"label", "values"}           values is an object of name/value pairs.
@@ -64,6 +65,8 @@ Node types:
                     value several nodes need, instead of repeating the expression.
 - http.request      {"label", "method", "url", "headers", "body"}
 - ai.prompt         {"label", "prompt", "system"} asks a model and returns {"text"}.
+- github.pull_request {"label", "owner", "repo", "number"} returns PR title, body, author, branches, and URL.
+- slack.message     {"label", "text"}              posts text to the workspace Slack webhook.
 
 Refer to earlier nodes with Go template syntax inside a string:
   {{ .nodes.<id>.<field> }} for a node's output, {{ .trigger.<field> }} for the payload.
