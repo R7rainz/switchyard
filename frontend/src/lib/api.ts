@@ -151,6 +151,17 @@ export const workflows = {
     api
       .post<Generated>(`/api/workspaces/${workspaceId}/workflows/generate`, { prompt })
       .then((r) => r.data),
+
+  feedback: (
+    workspaceId: string,
+    body: {
+      consent: true;
+      prompt: string;
+      outcome: "accepted" | "rejected";
+      generated: Generated;
+      finalGraph?: Graph;
+    },
+  ) => api.post(`/api/workspaces/${workspaceId}/ai/feedback`, body).then(() => undefined),
 };
 
 /** A proposed workflow. It has no id, because it does not exist yet. */

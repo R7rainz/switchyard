@@ -11,6 +11,7 @@ import {
   workflows,
   workspaces,
   type Graph,
+  type Generated,
   type Role,
   type Workflow,
 } from "./api";
@@ -193,6 +194,18 @@ export function useRevokeInvite(workspaceId: string | undefined) {
 export function useGenerateWorkflow(workspaceId: string | undefined) {
   return useMutation({
     mutationFn: (prompt: string) => workflows.generate(workspaceId!, prompt),
+  });
+}
+
+export function useSubmitWorkflowFeedback(workspaceId: string | undefined) {
+  return useMutation({
+    mutationFn: (body: {
+      consent: true;
+      prompt: string;
+      outcome: "accepted" | "rejected";
+      generated: Generated;
+      finalGraph?: Graph;
+    }) => workflows.feedback(workspaceId!, body),
   });
 }
 
