@@ -1,3 +1,2 @@
-// Package github integrates with the GitHub API: reading pull requests,
-// creating issues, commenting, merging, and verifying inbound webhooks.
+// Package github integrates with GitHub pull requests and signed webhooks.
 package github

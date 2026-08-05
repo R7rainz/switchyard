@@ -19,6 +19,8 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
+	"github.com/R7rainz/switchyard/backend/internal/github"
+	"github.com/R7rainz/switchyard/backend/internal/slack"
 	"github.com/R7rainz/switchyard/backend/internal/websocket"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
@@ -94,6 +96,8 @@ func main() {
 	// GitHub and Slack will arrive.
 	runners := execution.Builtin(nil)
 	runners.Add(ai.Runners(assistant))
+	runners.Add(github.Runners(credentials, nil))
+	runners.Add(slack.Runners(credentials, nil))
 
 	// The hub is handed to the engine as a Publisher and to the router as an
 	// EventStream. Neither package imports the other — the engine announces
