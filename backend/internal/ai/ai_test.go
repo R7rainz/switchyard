@@ -10,14 +10,16 @@ import (
 // stubProvider answers with whatever the test queued, and records what it was
 // asked, which is how the retry is observed.
 type stubProvider struct {
-	replies []string
-	prompts []string
-	keys    []string
+	replies  []string
+	prompts  []string
+	keys     []string
+	requests []Request
 }
 
 func (s *stubProvider) Complete(_ context.Context, key string, req Request) (Response, error) {
 	s.prompts = append(s.prompts, req.Prompt)
 	s.keys = append(s.keys, key)
+	s.requests = append(s.requests, req)
 	if len(s.replies) == 0 {
 		return Response{}, errors.New("stub: no reply queued")
 	}

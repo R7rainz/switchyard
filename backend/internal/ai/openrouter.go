@@ -52,7 +52,22 @@ func (o *OpenRouter) Complete(ctx context.Context, key string, req Request) (Res
 	if req.MaxTokens > 0 {
 		body["max_tokens"] = req.MaxTokens
 	}
-	if req.JSON {
+	if req.JSONSchema != nil {
+		if req.JSONSchema.Name == "" || len(req.JSONSchema.Schema) == 0 {
+			return Response{}, fmt.Errorf("%w: JSON schema needs a name and schema", ErrProvider)
+		}
+		body["response_format"] = map[string]any{
+			"type": "json_schema",
+			"json_schema": map[string]any{
+				"name":   req.JSONSchema.Name,
+				"strict": req.JSONSchema.Strict,
+				"schema": json.RawMessage(req.JSONSchema.Schema),
+			},
+		}
+		// Do not silently route to a provider that drops structured-output
+		// parameters; generation must either honor the schema or fail clearly.
+		body["provider"] = map[string]any{"require_parameters": true}
+	} else if req.JSON {
 		body["response_format"] = map[string]string{"type": "json_object"}
 	}
 

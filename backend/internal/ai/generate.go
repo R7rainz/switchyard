@@ -77,6 +77,60 @@ An http.request node outputs {"status", "body"}, so a later node reads
 Use only the node types above. If the request needs something else, get as close
 as possible with http.request and say so in the description.`
 
+// workflowJSONSchema makes the model produce the envelope and graph shape the
+// editor consumes. Node data stays open because each node owns its config and
+// future node types must not require a provider-schema migration.
+const workflowJSONSchema = `{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "description", "graph"],
+  "properties": {
+    "name": {"type": "string"},
+    "description": {"type": "string"},
+    "graph": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nodes", "edges"],
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "type", "position", "data"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "type": {"type": "string"},
+              "position": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["x", "y"],
+                "properties": {"x": {"type": "number"}, "y": {"type": "number"}}
+              },
+              "data": {"type": "object", "additionalProperties": true}
+            }
+          }
+        },
+        "edges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "source", "target", "sourceHandle"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "source": {"type": "string", "minLength": 1},
+              "target": {"type": "string", "minLength": 1},
+              "sourceHandle": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    }
+  }
+}`
+
 // GenerateWorkflow turns a description into a proposed workflow.
 //
 // The graph is checked with Validate, not Runnable: this is a draft heading for
@@ -100,7 +154,11 @@ func (s *Service) GenerateWorkflow(ctx context.Context, workspaceID, prompt stri
 		System:    systemPrompt,
 		Prompt:    prompt,
 		MaxTokens: generateTokens,
-		JSON:      true,
+		JSONSchema: &JSONSchema{
+			Name:   "switchyard_workflow",
+			Schema: json.RawMessage(workflowJSONSchema),
+			Strict: true,
+		},
 	}
 
 	// One retry, with the reason. Models get JSON structurally right far more

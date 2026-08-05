@@ -2,6 +2,7 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,38 @@ import (
 	"testing"
 	"time"
 )
+
+func TestOpenRouterSendsJSONSchema(t *testing.T) {
+	var got map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		_, _ = w.Write([]byte(`{"model":"m","choices":[{"message":{"content":"{}"}}]}`))
+	}))
+	defer server.Close()
+
+	client := &OpenRouter{client: server.Client(), baseURL: server.URL}
+	_, err := client.Complete(t.Context(), "sk-test", Request{
+		Model: "m", Prompt: "hi",
+		JSONSchema: &JSONSchema{Name: "thing", Schema: json.RawMessage(`{"type":"object"}`), Strict: true},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	format, ok := got["response_format"].(map[string]any)
+	if !ok || format["type"] != "json_schema" {
+		t.Fatalf("response_format = %#v", got["response_format"])
+	}
+	schema, ok := format["json_schema"].(map[string]any)
+	if !ok || schema["name"] != "thing" || schema["strict"] != true {
+		t.Fatalf("json_schema = %#v", format["json_schema"])
+	}
+	provider, ok := got["provider"].(map[string]any)
+	if !ok || provider["require_parameters"] != true {
+		t.Fatalf("provider = %#v, want require_parameters", got["provider"])
+	}
+}
 
 // The provider's own error message is passed on — "insufficient credits" is
 // something the caller can act on, and a bare 402 is not.

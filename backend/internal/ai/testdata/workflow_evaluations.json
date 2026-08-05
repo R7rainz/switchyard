@@ -1,0 +1,30 @@
+[
+  {
+    "name": "manual HTTP workflow",
+    "prompt": "Call the deployment endpoint manually",
+    "valid": true,
+    "runnable": true,
+    "response": "{\"name\":\"deploy\",\"description\":\"Calls the deployment endpoint\",\"graph\":{\"nodes\":[{\"id\":\"trigger\",\"type\":\"trigger.manual\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Start\"}},{\"id\":\"deploy\",\"type\":\"http.request\",\"position\":{\"x\":280,\"y\":0},\"data\":{\"label\":\"Deploy\",\"method\":\"POST\",\"url\":\"https://example.com/deploy\"}}],\"edges\":[{\"id\":\"edge\",\"source\":\"trigger\",\"target\":\"deploy\"}]}}"
+  },
+  {
+    "name": "weekday Slack schedule",
+    "prompt": "At 9am on weekdays, notify Slack",
+    "valid": true,
+    "runnable": true,
+    "response": "{\"name\":\"weekday notification\",\"description\":\"Sends a weekday Slack notification\",\"graph\":{\"nodes\":[{\"id\":\"schedule\",\"type\":\"trigger.schedule\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Weekdays at 9\",\"cron\":\"0 9 * * 1-5\"}},{\"id\":\"notify\",\"type\":\"slack.message\",\"position\":{\"x\":280,\"y\":0},\"data\":{\"label\":\"Notify Slack\",\"text\":\"Good morning\"}}],\"edges\":[{\"id\":\"edge\",\"source\":\"schedule\",\"target\":\"notify\"}]}}"
+  },
+  {
+    "name": "valid draft with an orphan",
+    "prompt": "Sketch a workflow before wiring every step",
+    "valid": true,
+    "runnable": false,
+    "response": "{\"name\":\"draft\",\"description\":\"Still being edited\",\"graph\":{\"nodes\":[{\"id\":\"trigger\",\"type\":\"trigger.manual\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Start\"}},{\"id\":\"orphan\",\"type\":\"http.request\",\"position\":{\"x\":280,\"y\":0},\"data\":{\"label\":\"Unwired\",\"url\":\"https://example.com\"}}],\"edges\":[]}}"
+  },
+  {
+    "name": "dangling edge",
+    "prompt": "Run a missing step",
+    "valid": false,
+    "runnable": false,
+    "response": "{\"name\":\"broken\",\"description\":\"Invalid graph\",\"graph\":{\"nodes\":[{\"id\":\"trigger\",\"type\":\"trigger.manual\",\"position\":{\"x\":0,\"y\":0},\"data\":{\"label\":\"Start\"}}],\"edges\":[{\"id\":\"edge\",\"source\":\"trigger\",\"target\":\"missing\"}]}}"
+  }
+]
