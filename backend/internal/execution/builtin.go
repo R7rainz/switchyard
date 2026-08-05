@@ -21,12 +21,13 @@ func Builtin(client *http.Client) Registry {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
 	return Registry{
-		"trigger.manual":   RunnerFunc(runTrigger),
-		"trigger.webhook":  RunnerFunc(runTrigger),
-		"trigger.schedule": RunnerFunc(runTrigger),
-		"logic.condition":  RunnerFunc(runCondition),
-		"variable.set":     RunnerFunc(runSetVariable),
-		"http.request":     &httpRunner{client: client},
+		"trigger.manual":              RunnerFunc(runTrigger),
+		"trigger.webhook":             RunnerFunc(runTrigger),
+		"trigger.schedule":            RunnerFunc(runTrigger),
+		"trigger.github.pull_request": RunnerFunc(runTrigger),
+		"logic.condition":             RunnerFunc(runCondition),
+		"variable.set":                RunnerFunc(runSetVariable),
+		"http.request":                &httpRunner{client: client},
 	}
 }
 
