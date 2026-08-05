@@ -20,6 +20,7 @@ func Builtin(client *http.Client) Registry {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
+	client = newSSRFProtectedClient(client, lookupHost)
 	return Registry{
 		"trigger.manual":              RunnerFunc(runTrigger),
 		"trigger.webhook":             RunnerFunc(runTrigger),
@@ -27,7 +28,7 @@ func Builtin(client *http.Client) Registry {
 		"trigger.github.pull_request": RunnerFunc(runTrigger),
 		"logic.condition":             RunnerFunc(runCondition),
 		"variable.set":                RunnerFunc(runSetVariable),
-		"http.request":                &httpRunner{client: client},
+		"http.request":                &httpRunner{client: client, lookupIP: lookupHost},
 	}
 }
 
@@ -118,7 +119,8 @@ func runSetVariable(_ context.Context, in Input) (Result, error) {
 
 // httpRunner calls an HTTP endpoint.
 type httpRunner struct {
-	client *http.Client
+	client   *http.Client
+	lookupIP lookupIPFunc
 }
 
 // maxResponseBytes caps what one node brings back. The body is stored, returned
@@ -138,6 +140,9 @@ func (h *httpRunner) Run(ctx context.Context, in Input) (Result, error) {
 	}
 	if data.URL == "" {
 		return Result{}, fmt.Errorf("http node needs a url")
+	}
+	if err := validateHTTPURL(ctx, data.URL, h.lookupIP); err != nil {
+		return Result{}, err
 	}
 	if data.Method == "" {
 		data.Method = http.MethodGet
@@ -159,7 +164,17 @@ func (h *httpRunner) Run(ctx context.Context, in Input) (Result, error) {
 		request.Header.Set(name, value)
 	}
 
-	response, err := h.client.Do(request)
+	client := h.client
+	if client == nil {
+		client = newSSRFProtectedClient(nil, h.lookupIP)
+	} else {
+		// Do not mutate a shared client: runners may execute concurrently, and
+		// a redirect policy belongs to this request rather than global state.
+		copy := *client
+		copy.CheckRedirect = rejectRedirect
+		client = &copy
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return Result{}, err
 	}
