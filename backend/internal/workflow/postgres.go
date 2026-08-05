@@ -78,6 +78,23 @@ func (s *PostgresStore) List(ctx context.Context, workspaceID string) ([]Workflo
 	return found, rows.Err()
 }
 
+func (s *PostgresStore) ListAll(ctx context.Context) ([]Workflow, error) {
+	rows, err := s.pool.Query(ctx, workflowColumns+` order by "id"`)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: listing all: %w", err)
+	}
+	defer rows.Close()
+	var found []Workflow
+	for rows.Next() {
+		w, err := scanWorkflow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("workflow: listing all: %w", err)
+		}
+		found = append(found, w)
+	}
+	return found, rows.Err()
+}
+
 // Update rewrites everything the caller may change. The workspace and the id
 // are the key, never the payload: a patch cannot move a workflow to another
 // workspace, because there is nowhere in this statement to say so.

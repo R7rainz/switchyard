@@ -107,6 +107,7 @@ func main() {
 	executions := execution.NewService(
 		execution.NewPostgresStore(pool), workflows, runners,
 		execution.Options{Events: events})
+	executions.StartScheduler(context.Background(), time.Minute)
 
 	// A process that died mid-run left rows nothing will ever finish. Doing
 	// this before the server listens means no request can ever see a run that
