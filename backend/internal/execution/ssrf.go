@@ -10,6 +10,19 @@ import (
 	"strings"
 )
 
+// IsPrivate covers RFC1918 and IPv6 unique-local addresses, not every
+// non-public range that can route to an internal service.
+var blockedPrefixes = [...]netip.Prefix{
+	netip.MustParsePrefix("100.64.0.0/10"), // shared address space
+	netip.MustParsePrefix("192.0.0.0/24"),  // protocol assignments
+	netip.MustParsePrefix("192.0.2.0/24"),  // documentation
+	netip.MustParsePrefix("198.18.0.0/15"), // benchmarking
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("2001:db8::/32"), // IPv6 documentation
+	netip.MustParsePrefix("240.0.0.0/4"),   // reserved
+}
+
 // lookupIPFunc is injectable only so the runner can be tested without making
 // a real request. Production always uses the system resolver.
 type lookupIPFunc func(context.Context, string) ([]net.IP, error)
@@ -129,11 +142,20 @@ func validateIPs(ips []net.IP) error {
 		}
 		addr = addr.Unmap()
 		if addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() ||
-			addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() {
+			addr.IsLinkLocalMulticast() || addr.IsMulticast() || addr.IsUnspecified() || blocked(addr) {
 			return fmt.Errorf("http node cannot reach private or local addresses")
 		}
 	}
 	return nil
+}
+
+func blocked(addr netip.Addr) bool {
+	for _, prefix := range blockedPrefixes {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
 }
 
 func rejectRedirect(_ *http.Request, _ []*http.Request) error {

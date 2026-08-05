@@ -16,6 +16,7 @@ func TestHTTPRunnerRejectsPrivateAndLocalAddresses(t *testing.T) {
 		"http://127.0.0.1/",
 		"http://[::1]/",
 		"http://10.0.0.1/",
+		"http://100.64.0.1/",
 		"http://169.254.169.254/latest/meta-data/",
 	} {
 		t.Run(raw, func(t *testing.T) {
