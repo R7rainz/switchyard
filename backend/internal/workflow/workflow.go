@@ -30,12 +30,14 @@ type Workflow struct {
 // Store is the persistence this package needs, declared here where it is
 // consumed so the rules can be tested without a database.
 //
-// Every method takes a workspace id and must put it in the WHERE clause.
-// A workflow id alone is enough to name a row, which is exactly the problem:
-// the API layer checks permission against the workspace in the URL, so a store
-// that looked a workflow up by id alone would hand workspace B's admin a
-// workflow from workspace A. Making the workspace a required argument means
-// that leak takes a deliberately wrong query rather than a forgotten filter.
+// Workspace-scoped methods take a workspace id and must put it in the WHERE
+// clause. A workflow id alone is enough to name a row, which is exactly the
+// problem: the API layer checks permission against the workspace in the URL,
+// so a store that looked a workflow up by id alone would hand workspace B's
+// admin a workflow from workspace A. Making the workspace a required argument
+// means that leak takes a deliberately wrong query rather than a forgotten
+// filter. ListAll is the scheduler's deliberate cross-workspace read and is
+// only exposed to that internal caller.
 //
 // This package scopes; it does not authorize. Whether the caller may touch the
 // workspace at all is settled earlier, by api.RequirePermission.
@@ -48,6 +50,7 @@ type Store interface {
 	// was silently left empty is a trap; if listing ever gets slow, add a
 	// separate summary type rather than a half-populated one.
 	List(ctx context.Context, workspaceID string) ([]Workflow, error)
+	ListAll(ctx context.Context) ([]Workflow, error)
 
 	Update(ctx context.Context, w Workflow) error
 	Delete(ctx context.Context, workspaceID, id string) error
@@ -110,6 +113,8 @@ func (s *Service) Get(ctx context.Context, workspaceID, id string) (Workflow, er
 func (s *Service) List(ctx context.Context, workspaceID string) ([]Workflow, error) {
 	return s.store.List(ctx, workspaceID)
 }
+
+func (s *Service) ListAll(ctx context.Context) ([]Workflow, error) { return s.store.ListAll(ctx) }
 
 func (s *Service) Delete(ctx context.Context, workspaceID, id string) error {
 	return s.store.Delete(ctx, workspaceID, id)

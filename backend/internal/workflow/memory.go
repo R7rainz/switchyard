@@ -60,6 +60,17 @@ func (m *MemoryStore) List(_ context.Context, workspaceID string) ([]Workflow, e
 	return found, nil
 }
 
+func (m *MemoryStore) ListAll(_ context.Context) ([]Workflow, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	found := make([]Workflow, 0, len(m.workflows))
+	for _, w := range m.workflows {
+		found = append(found, w)
+	}
+	sort.Slice(found, func(i, j int) bool { return found[i].ID < found[j].ID })
+	return found, nil
+}
+
 func (m *MemoryStore) Update(_ context.Context, w Workflow) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
