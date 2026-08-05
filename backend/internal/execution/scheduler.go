@@ -104,6 +104,7 @@ func cronMatches(raw string, now time.Time) bool {
 }
 
 func cronFieldMatches(raw string, value, min, max int) bool {
+	matched := false
 	for _, term := range strings.Split(raw, ",") {
 		base, stepText, hasStep := strings.Cut(term, "/")
 		step := 1
@@ -140,16 +141,16 @@ func cronFieldMatches(raw string, value, min, max int) bool {
 			low, high = parsed, parsed
 		}
 		if low < min || high > max || low > high {
-			continue
+			return false
 		}
 		for _, candidate := range []int{value, 7} {
 			if candidate == 7 && (max != 7 || value != 0) {
 				continue
 			}
 			if candidate >= low && candidate <= high && (candidate-low)%step == 0 {
-				return true
+				matched = true
 			}
 		}
 	}
-	return false
+	return matched
 }

@@ -17,6 +17,9 @@ func TestCronMatchesExactAndWildcardMinutes(t *testing.T) {
 	if cronMatches("31 9 * * *", now) {
 		t.Fatal("wrong minute matched")
 	}
+	if cronMatches("30,60 9 * * *", now) {
+		t.Fatal("invalid minute range matched")
+	}
 	if !cronMatches("* * * * *", now) {
 		t.Fatal("wildcard schedule did not match")
 	}
