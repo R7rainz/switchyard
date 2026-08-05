@@ -12,6 +12,7 @@ import { Button, Eyebrow, Skeleton, Wordmark, cx } from "./ui";
 // Only routes that exist. A nav linking to a 404 is worse than a short nav.
 const links = [
   { href: "/workflows", label: "Workflows" },
+  { href: "/runs", label: "Runs" },
   { href: "/settings", label: "Settings" },
 ];
 

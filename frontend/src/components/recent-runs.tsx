@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 import { Eyebrow, Skeleton, cx } from "./ui";
 import { RunStatus, formatDuration } from "./run-status";
 import { useExecutions, useWorkflows } from "@/lib/queries";
@@ -33,18 +35,18 @@ export function RecentRuns({ workspaceId }: { workspaceId: string | undefined })
     <section className="mt-12">
       <div className="mb-4 flex items-end justify-between gap-4">
         <Eyebrow>Recent runs</Eyebrow>
-        <span className="text-caption text-ash">Updates automatically</span>
+        <Link href="/runs" className="text-caption text-ash hover:text-ink">
+          All runs
+        </Link>
       </div>
 
       <ul className="overflow-hidden rounded-xl border border-hairline bg-canvas-white">
         {runs.map((run, index) => (
-          <li
-            key={run.id}
-            className={cx(
-              "flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5",
-              index > 0 && "border-t border-hairline",
-            )}
-          >
+          <li key={run.id} className={cx(index > 0 && "border-t border-hairline")}>
+            <Link
+              href={`/runs/${run.id}`}
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-3.5 hover:bg-pearl"
+            >
             <RunStatus status={run.status} className="w-24 shrink-0" />
 
             <span className="min-w-0 flex-1 truncate text-body-sm text-ink">
@@ -62,7 +64,10 @@ export function RecentRuns({ workspaceId }: { workspaceId: string | undefined })
             <span className="shrink-0 text-caption text-ash tabular-nums">
               {formatDuration(run.durationMs) ?? "—"}
             </span>
-            <Eyebrow className="w-24 shrink-0 text-right">{relativeTime(run.createdAt)}</Eyebrow>
+              <Eyebrow className="w-28 shrink-0 text-right">
+                {relativeTime(run.createdAt)}
+              </Eyebrow>
+            </Link>
           </li>
         ))}
       </ul>
