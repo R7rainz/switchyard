@@ -2,10 +2,20 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 )
+
+// JSONSchema asks a provider to constrain the response to Schema. It stays on
+// the request rather than the Provider interface so providers that cannot
+// enforce schemas can still use the same completion contract.
+type JSONSchema struct {
+	Name   string
+	Schema json.RawMessage
+	Strict bool
+}
 
 // ErrNoCredential means the workspace has not stored a provider key. It is the
 // one failure here that is the caller's to fix, so it gets its own sentinel.
@@ -43,6 +53,10 @@ type Request struct {
 	// JSON asks the provider for a JSON object. It is a hint, not a guarantee —
 	// every caller still has to parse defensively.
 	JSON bool
+
+	// JSONSchema is stronger than JSON when the provider supports structured
+	// outputs. It takes precedence over JSON.
+	JSONSchema *JSONSchema
 }
 
 // Response is what came back. Model is the model that actually answered, which
