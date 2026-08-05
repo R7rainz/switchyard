@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/R7rainz/switchyard/backend/internal/ai"
+	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
@@ -49,6 +50,7 @@ func aiRouter(t *testing.T, reply string, hasKey bool) (http.Handler, *workspace
 		Workspaces: workspaces,
 		Workflows:  workflows,
 		AI:         ai.NewService(modelReturns(reply), keyStored(hasKey)),
+		Feedback:   aifeedback.NewService(aifeedback.NewMemoryStore()),
 		// Generous, so the tests that are not about limiting never trip it.
 		GenerateLimit: NewLimiter(1000, 1000),
 		AppURL:        testAppURL,
@@ -68,6 +70,7 @@ func aiRouterLimited(t *testing.T, reply string, hasKey bool, limiter *Limiter) 
 		Workspaces:    workspaces,
 		Workflows:     workflow.NewService(workflow.NewMemoryStore()),
 		AI:            ai.NewService(modelReturns(reply), keyStored(hasKey)),
+		Feedback:      aifeedback.NewService(aifeedback.NewMemoryStore()),
 		GenerateLimit: limiter,
 		AppURL:        testAppURL,
 	})
@@ -177,5 +180,35 @@ func TestGenerateNeedsWritePermission(t *testing.T) {
 		`{"prompt":"x"}`)
 	if status != http.StatusNotFound {
 		t.Fatalf("stranger: status = %d, want 404", status)
+	}
+}
+
+func TestFeedbackRequiresExplicitConsent(t *testing.T) {
+	router, _, _ := aiRouter(t, generatedGraph, true)
+	ws := firstWorkspace(t, router, "alice")
+
+	status, _ := call(t, router, http.MethodPost, "/api/workspaces/"+ws+"/ai/feedback", "alice", `{
+		"consent":false,
+		"prompt":"build it",
+		"outcome":"accepted",
+		"generated":`+generatedGraph+`
+	}`)
+	if status != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", status)
+	}
+}
+
+func TestFeedbackAcceptsAnOptedInDraft(t *testing.T) {
+	router, _, _ := aiRouter(t, generatedGraph, true)
+	ws := firstWorkspace(t, router, "alice")
+
+	status, _ := call(t, router, http.MethodPost, "/api/workspaces/"+ws+"/ai/feedback", "alice", `{
+		"consent":true,
+		"prompt":"build it",
+		"outcome":"accepted",
+		"generated":`+generatedGraph+`
+	}`)
+	if status != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", status)
 	}
 }

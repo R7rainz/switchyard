@@ -13,6 +13,7 @@ import (
 	zlog "github.com/rs/zerolog/log"
 
 	"github.com/R7rainz/switchyard/backend/internal/ai"
+	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
 	"github.com/R7rainz/switchyard/backend/internal/api"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/config"
@@ -86,6 +87,7 @@ func main() {
 	workspaces := workspace.NewService(workspaceStore)
 	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
 	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
+	feedback := aifeedback.NewService(aifeedback.NewPostgresStore(pool))
 
 	// The provider is process-wide and holds no key: a workspace's key is
 	// fetched per call, so one OpenRouter client serves every workspace.
@@ -133,6 +135,7 @@ func main() {
 			Workflows:   workflows,
 			Executions:  executions,
 			AI:          assistant,
+			Feedback:    feedback,
 			Events:      events,
 			AppURL:      cfg.AuthIssuer,
 		}),

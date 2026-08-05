@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/ai"
+	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -39,6 +40,7 @@ type Deps struct {
 	Workflows   *workflow.Service
 	Executions  *execution.Service
 	AI          *ai.Service
+	Feedback    *aifeedback.Service
 
 	// Events is the WebSocket hub. Absent means the streaming route answers
 	// 501 rather than panicking, which is what a test router wants.
@@ -82,7 +84,7 @@ func NewRouter(deps Deps) http.Handler {
 	creds := &credentialAPI{credentials: deps.Credentials}
 	flows := &workflowAPI{workflows: deps.Workflows}
 	runs := &executionAPI{executions: deps.Executions, events: deps.Events}
-	assist := &aiAPI{ai: deps.AI}
+	assist := &aiAPI{ai: deps.AI, feedback: deps.Feedback}
 	githubHooks := &githubWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
 	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 
@@ -141,6 +143,7 @@ func NewRouter(deps Deps) http.Handler {
 			// system. The limit sits after the permission check, so a stranger
 			// cannot spend a workspace's allowance by probing it.
 			r.With(writeFlows, RateLimit(generateLimit)).Post("/workflows/generate", assist.generateWorkflow)
+			r.With(writeFlows).Post("/ai/feedback", assist.submitFeedback)
 
 			// Running is a separate permission from editing: a VIEWER may watch
 			// what happened, and it takes a MEMBER to make something happen.

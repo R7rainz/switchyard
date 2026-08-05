@@ -8,6 +8,7 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/R7rainz/switchyard/backend/internal/ai"
+	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -87,6 +88,9 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		// not, and the caller's only sensible move is to try again.
 		zerolog.Ctx(r.Context()).Warn().Err(err).Msg("model provider failed")
 		writeJSON(w, http.StatusBadGateway, map[string]any{"error": err.Error()})
+
+	case errors.Is(err, aifeedback.ErrInvalid):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
 
 	case errors.Is(err, workspace.ErrForbidden):
 		// A member whose role is too low is a different case: they already
