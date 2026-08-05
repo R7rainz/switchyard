@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { Capabilities } from "@/components/capabilities";
 import { PhoenixGradient } from "@/components/gradient";
 import { HeroGraph } from "@/components/hero-graph";
+import { Pricing } from "@/components/pricing";
 import { RunRecord } from "@/components/run-record";
 import { Reveal } from "@/components/reveal";
 import { Badge, Button, Eyebrow, Splash, Wordmark } from "@/components/ui";
@@ -98,6 +99,8 @@ export default function Home() {
 
         <Capabilities />
       </section>
+
+      <Pricing />
 
       {/* The dark counterweight. One per page, at the bottom, as the closer.
           Split, because the claim it makes is about a record — so it shows one
