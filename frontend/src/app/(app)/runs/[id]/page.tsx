@@ -40,6 +40,8 @@ function RunView({ workspaceId }: { workspaceId: string }) {
   const { data: flows } = useWorkflows(workspaceId);
   const cancel = useCancelExecution(workspaceId);
 
+  if (run.loadError) return <ErrorNote>{run.loadError}</ErrorNote>;
+
   // The row has not landed yet. Status may already be set from an event, but
   // there is nothing to lay out until the graph arrives.
   if (!run.execution || !run.graph) return <RunSkeleton />;

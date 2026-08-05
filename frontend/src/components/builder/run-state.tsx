@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 import {
+  apiError,
   executions,
   isTerminal,
   watchExecution,
@@ -46,6 +47,8 @@ type RunState = {
    * from two timestamps, and a node that is still running has one of them.
    */
   nodeTimes: Record<string, Pick<NodeRun, "startedAt" | "finishedAt" | "durationMs">>;
+  /** A fetch or stream failure, separate from the execution's own error. */
+  loadError: string | null;
 };
 
 const empty: RunState = {
@@ -58,6 +61,7 @@ const empty: RunState = {
   execution: null,
   graph: null,
   nodeTimes: {},
+  loadError: null,
 };
 
 const RunContext = createContext<RunState>(empty);
@@ -147,47 +151,48 @@ export function RunProvider({
 
     let close: (() => void) | undefined;
     let live = true;
+    const controller = new AbortController();
 
     (async () => {
       setState({ ...empty, executionId });
 
-      // Connect first. This is the contract: nothing is replayed, so a run that
-      // ends between the fetch and the subscribe would leave the canvas showing
-      // RUNNING forever.
-      close = await watchExecution(workspaceId, executionId, (event) => {
-        if (!live) return;
-        setState((current) => {
-          if (event.type === "node" && event.nodeId) {
-            return {
-              ...current,
-              nodes: { ...current.nodes, [event.nodeId]: event.status },
-              nodeErrors: event.error
-                ? { ...current.nodeErrors, [event.nodeId]: event.error }
-                : current.nodeErrors,
-              nodeOutputs:
-                event.output === undefined
-                  ? current.nodeOutputs
-                  : { ...current.nodeOutputs, [event.nodeId]: event.output },
-            };
-          }
-          return { ...current, status: event.status, error: event.error ?? current.error };
-        });
-      });
-
-      // Then reconcile. A fast run can be over before the socket opened, and
-      // this is what fills the canvas in when that happens. Events that arrive
-      // after it simply overwrite the same keys.
       try {
+        // The server is subscribed only once this opens. Fetching before that
+        // leaves a gap where a terminal event can be lost forever.
+        close = await watchExecution(workspaceId, executionId, (event) => {
+          if (!live) return;
+          setState((current) => {
+            if (event.type === "node" && event.nodeId) {
+              return {
+                ...current,
+                nodes: { ...current.nodes, [event.nodeId]: event.status },
+                nodeErrors: event.error
+                  ? { ...current.nodeErrors, [event.nodeId]: event.error }
+                  : current.nodeErrors,
+                nodeOutputs:
+                  event.output === undefined
+                    ? current.nodeOutputs
+                    : { ...current.nodeOutputs, [event.nodeId]: event.output },
+              };
+            }
+            return { ...current, status: event.status, error: event.error ?? current.error };
+          });
+        }, controller.signal);
+        if (!live) {
+          close();
+          return;
+        }
+
         const snapshot = await executions.get(workspaceId, executionId);
         if (live) setState((current) => merged(current, snapshot));
-      } catch {
-        // The socket is the live path; a failed reconcile is not worth
-        // surfacing on its own.
+      } catch (error) {
+        if (live) setState((current) => ({ ...current, loadError: apiError(error) }));
       }
     })();
 
     return () => {
       live = false;
+      controller.abort();
       close?.();
     };
   }, [workspaceId, executionId, apply]);
@@ -208,7 +213,9 @@ export function RunProvider({
       .then((snapshot) => {
         if (live) setState((current) => merged(current, snapshot));
       })
-      .catch(() => {});
+      .catch((error) => {
+        if (live) setState((current) => ({ ...current, loadError: apiError(error) }));
+      });
     return () => {
       live = false;
     };

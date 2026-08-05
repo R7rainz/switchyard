@@ -205,18 +205,44 @@ export async function watchExecution(
   workspaceId: string,
   executionId: string,
   onEvent: (event: ExecutionEvent) => void,
+  signal?: AbortSignal,
 ): Promise<() => void> {
   const token = await getToken();
   if (!token) throw new Error("Not signed in");
+  if (signal?.aborted) throw new Error("Run watch cancelled");
 
   const url =
     API_URL.replace(/^http/, "ws") +
     `/api/workspaces/${workspaceId}/executions/${executionId}/events`;
 
-  const socket = new WebSocket(url, ["bearer", token]);
-  socket.onmessage = (message) => onEvent(JSON.parse(message.data) as ExecutionEvent);
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(url, ["bearer", token]);
+    let opened = false;
+    const close = () => socket.close();
+    const abort = () => {
+      close();
+      reject(new Error("Run watch cancelled"));
+    };
+    const clearAbort = () => signal?.removeEventListener("abort", abort);
 
-  return () => socket.close();
+    signal?.addEventListener("abort", abort, { once: true });
+    socket.onmessage = (message) => onEvent(JSON.parse(message.data) as ExecutionEvent);
+    socket.onopen = () => {
+      opened = true;
+      clearAbort();
+      resolve(close);
+    };
+    socket.onerror = () => {
+      clearAbort();
+      reject(new Error("Could not connect to run events"));
+    };
+    socket.onclose = () => {
+      if (!opened) {
+        clearAbort();
+        reject(new Error("Could not connect to run events"));
+      }
+    };
+  });
 }
 
 /**
