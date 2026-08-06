@@ -146,18 +146,27 @@ interface, same as the rest.
 case so a Better Auth format change fails a test rather than production.
 
 **Routing is Chi** (`github.com/go-chi/chi/v5`, the backend's only dependency),
-chosen for readability. Protected routes go inside the `/api` group, which
-applies `RequireAuth` to the whole subtree:
+chosen for readability. The canonical Go API is versioned under `/api/v1`; the
+original `/api` paths remain a compatibility alias while clients migrate.
+Better Auth's frontend endpoints under `/api/auth` are separate and are not
+part of this versioned Go API. Protected routes go inside either API group,
+which applies `RequireAuth` to the whole subtree:
 
-    router.Route("/api", func(r chi.Router) {
+    router.Route("/api/v1", func(r chi.Router) {
         r.Use(RequireAuth(verifier))
         r.Get("/me", handleMe)
     })
 
-One consequence: an unknown path under `/api` answers **401, not 404**, because
-group middleware runs before the subtree resolves a route. That is the better
-default — it stops an unauthenticated caller enumerating which endpoints exist.
-With a valid token the same path correctly 404s. A route that must be public
+Signed GitHub webhooks use `/api/v1/hooks/github/{workspaceID}/{workflowID}`.
+The original `/hooks/github/{workspaceID}/{workflowID}` path remains available
+for installations that already configured it; webhook requests authenticate
+with GitHub's signature instead of a user JWT.
+
+One consequence: an unknown path under `/api/v1` (or its `/api` compatibility
+alias) answers **401, not 404**, because group middleware runs before the
+subtree resolves a route. That is the better default — it stops an
+unauthenticated caller enumerating which endpoints exist. With a valid token the
+same path correctly 404s. A route that must be public
 belongs outside the group, like `/healthz`.
 
 `middleware.Recoverer` is mounted so a panic fails one request instead of the
@@ -764,6 +773,8 @@ builder, AI workflow generation, execution with status/logs/timing, live log
 streaming over WebSocket. Node types: triggers, logic, AI, HTTP, GitHub,
 communication, variables.
 
-**Not in v1:** microservices, Kubernetes, marketplace, billing, teams, RBAC,
-plugins, mobile, 100+ integrations. Future node types (Docker, SSH, Kubernetes,
-Kafka, Terraform, …) must not influence MVP architecture.
+**Not in v1:** microservices, Kubernetes, marketplace, billing, plugins,
+mobile, 100+ integrations. Workspace teams, invitations, and four-role RBAC
+are implemented in v1; custom roles, per-resource grants, nested groups, and
+cross-workspace sharing remain out of scope. Future node types (Docker, SSH,
+Kubernetes, Kafka, Terraform, …) must not influence MVP architecture.
