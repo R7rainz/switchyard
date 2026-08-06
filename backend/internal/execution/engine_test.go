@@ -211,9 +211,13 @@ func TestRetryRecoversFailedRunAndIsIdempotent(t *testing.T) {
 	rec.mu.Lock()
 	delete(rec.fail, "a")
 	rec.mu.Unlock()
+	svc.workflows = stubWorkflows{err: ErrNotFound}
 	retried, err := svc.Retry(context.Background(), wsA, failed.ID, user, "retry-1")
 	if err != nil {
 		t.Fatalf("Retry: %v", err)
+	}
+	if retried.RetryOf != failed.ID {
+		t.Fatalf("retryOf = %q, want %q", retried.RetryOf, failed.ID)
 	}
 	duplicate, err := svc.Retry(context.Background(), wsA, failed.ID, user, "retry-1")
 	if err != nil {
