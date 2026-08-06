@@ -114,6 +114,15 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		// before the cancel arrived. Nothing to retry.
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "the run has already finished"})
 
+	case errors.Is(err, execution.ErrNotRetryable):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "only failed or cancelled runs can be retried"})
+
+	case errors.Is(err, execution.ErrIdempotencyConflict):
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "the idempotency key was already used for a different request"})
+
+	case errors.Is(err, execution.ErrInvalidIdempotencyKey):
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "Idempotency-Key must be 200 characters or fewer"})
+
 	case errors.Is(err, workspace.ErrLastOwner):
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "a workspace must keep an owner"})
 

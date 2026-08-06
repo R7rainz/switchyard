@@ -38,6 +38,7 @@ type EventStream interface {
 type executionView struct {
 	ID         string           `json:"id"`
 	WorkflowID string           `json:"workflowId,omitempty"`
+	RetryOf    string           `json:"retryOf,omitempty"`
 	Status     execution.Status `json:"status"`
 	Trigger    string           `json:"trigger"`
 	Error      string           `json:"error,omitempty"`
@@ -65,6 +66,7 @@ func executionViewOf(run execution.Execution) executionView {
 	view := executionView{
 		ID:         run.ID,
 		WorkflowID: run.WorkflowID,
+		RetryOf:    run.RetryOf,
 		Status:     run.Status,
 		Trigger:    run.Trigger,
 		Error:      run.Error,
@@ -99,15 +101,32 @@ func (a *executionAPI) startExecution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := a.executions.Start(r.Context(),
+	run, err := a.executions.StartWithIdempotencyKey(r.Context(),
 		chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID"),
-		claims.Subject, execution.TriggerManual, body.Input)
+		claims.Subject, execution.TriggerManual, body.Input, r.Header.Get("Idempotency-Key"))
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 
 	// 202, not 201: the run has been accepted, and it has not happened yet.
+	writeJSON(w, http.StatusAccepted, executionViewOf(run))
+}
+
+func (a *executionAPI) retryExecution(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, r, auth.ErrNoIdentity)
+		return
+	}
+
+	run, err := a.executions.Retry(r.Context(),
+		chi.URLParam(r, "workspaceID"), chi.URLParam(r, "executionID"),
+		claims.Subject, r.Header.Get("Idempotency-Key"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
 	writeJSON(w, http.StatusAccepted, executionViewOf(run))
 }
 

@@ -70,7 +70,14 @@ func (a *githubWebhookAPI) receive(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	run, err := a.executions.Start(r.Context(), workspaceID, workflowID, "", execution.TriggerWebhook, body)
+	// GitHub retries deliveries with the same delivery id. Persisting it as the
+	// execution key makes a redelivery return the original run instead of
+	// repeating its side effects.
+	key := ""
+	if deliveryID := strings.TrimSpace(r.Header.Get("X-GitHub-Delivery")); deliveryID != "" {
+		key = "github:" + deliveryID
+	}
+	run, err := a.executions.StartWithIdempotencyKey(r.Context(), workspaceID, workflowID, "", execution.TriggerWebhook, body, key)
 	if err != nil {
 		writeError(w, r, err)
 		return

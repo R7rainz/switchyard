@@ -156,6 +156,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.With(readRuns).Get("/executions", runs.listExecutions)
 			r.With(readRuns).Get("/executions/{executionID}", runs.getExecution)
 			r.With(runRuns).Post("/executions/{executionID}/cancel", runs.cancelExecution)
+			r.With(runRuns).Post("/executions/{executionID}/retry", runs.retryExecution)
 
 			// Watching is reading, so it sits with execution:read. The
 			// upgrade happens inside the handler, behind the same
