@@ -6,7 +6,7 @@ import { useState } from "react";
 import { GraphPreview } from "./graph-preview";
 import { Modal } from "./modal";
 import { Button, ErrorNote, Eyebrow, Field, Textarea } from "./ui";
-import { apiError, type Generated } from "@/lib/api";
+import { AI_PROVIDERS, apiError, type Generated } from "@/lib/api";
 import { useCreateWorkflow, useGenerateWorkflow, useSubmitWorkflowFeedback } from "@/lib/queries";
 
 /**
@@ -33,6 +33,7 @@ export function GenerateModal({
   const feedback = useSubmitWorkflowFeedback(workspaceId);
 
   const [prompt, setPrompt] = useState("");
+  const [provider, setProvider] = useState("");
   const [proposal, setProposal] = useState<Generated | null>(null);
   const [shareFeedback, setShareFeedback] = useState(false);
 
@@ -40,6 +41,7 @@ export function GenerateModal({
     generate.reset();
     create.reset();
     setPrompt("");
+    setProvider("");
     setProposal(null);
     setShareFeedback(false);
     onClose();
@@ -133,7 +135,7 @@ export function GenerateModal({
           className="flex flex-col gap-5"
           onSubmit={(event) => {
             event.preventDefault();
-            generate.mutate(prompt.trim(), { onSuccess: setProposal });
+            generate.mutate({ prompt: prompt.trim(), provider }, { onSuccess: setProposal });
           }}
         >
           <Field
@@ -148,6 +150,21 @@ export function GenerateModal({
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="When a pull request is merged, fetch the diff, summarise it, and post to Slack — but page the on-call instead if it touches migrations."
             />
+          </Field>
+
+          <Field label="Provider" hint="Leave as Default to use OpenRouter. Store the matching provider/default key in Settings.">
+            <select
+              value={provider}
+              onChange={(event) => setProvider(event.target.value)}
+              className="h-12 rounded-xl border border-hairline bg-canvas-white px-4 text-body-sm text-ink focus:border-ink/25 focus:outline-none"
+            >
+              <option value="">Default (OpenRouter)</option>
+              {AI_PROVIDERS.filter((option) => option !== "openrouter").map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
           </Field>
 
           {generate.error && <ErrorNote>{apiError(generate.error)}</ErrorNote>}

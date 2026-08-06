@@ -60,11 +60,19 @@ Node types:
 - trigger.github.pull_request {"label", "action"}  starts on a signed GitHub pull_request delivery.
 - logic.condition   {"label", "value"}            value renders to true/false. It must
                     have two outgoing edges, with sourceHandle "true" and "false".
+- logic.switch      {"label", "value", "cases"}   value selects one case handle; cases is a
+                    JSON array of unique strings. Unmatched values use sourceHandle "default".
+- logic.delay       {"label", "duration"}         waits for a Go duration such as "5s".
 - variable.set      {"label", "values"}           values is an object of name/value pairs.
                     Later nodes read them as {{ .nodes.<id>.<name> }}. Use it to name a
                     value several nodes need, instead of repeating the expression.
 - http.request      {"label", "method", "url", "headers", "body"}
-- ai.prompt         {"label", "prompt", "system"} asks a model and returns {"text"}.
+- ai.prompt         {"label", "provider", "prompt", "system"} asks a model and returns {"text"}.
+- ai.chat           {"label", "provider", "prompt", "system"} returns a conversational {"text"}.
+- ai.summarize      {"label", "provider", "text", "instructions"} returns a concise {"text"} summary.
+- ai.classification {"label", "provider", "text", "labels"} returns {"label", "reasoning"}; labels is a JSON array.
+- ai.decision       {"label", "provider", "question", "context"} returns {"decision", "reasoning"} and branches true/false.
+                    Provider is optional and can be openrouter, openai, anthropic, or gemini.
 - github.pull_request {"label", "owner", "repo", "number"} returns PR title, body, author, branches, and URL.
 - slack.message     {"label", "text"}              posts text to the workspace Slack webhook.
 
@@ -138,6 +146,10 @@ const workflowJSONSchema = `{
 // allowed here. What it must not be is malformed — a duplicate id or an edge
 // into nothing would break the editor rather than the run.
 func (s *Service) GenerateWorkflow(ctx context.Context, workspaceID, prompt string) (Generated, error) {
+	return s.GenerateWorkflowWithProvider(ctx, workspaceID, "", prompt)
+}
+
+func (s *Service) GenerateWorkflowWithProvider(ctx context.Context, workspaceID, provider, prompt string) (Generated, error) {
 	// The deadline belongs here rather than on the HTTP client, because this is
 	// the caller that answers a request: it has to fail before the API server's
 	// 30s write timeout, or it produces a response nobody is listening for. It
@@ -151,6 +163,7 @@ func (s *Service) GenerateWorkflow(ctx context.Context, workspaceID, prompt stri
 	defer cancel()
 
 	req := Request{
+		Provider:  provider,
 		System:    systemPrompt,
 		Prompt:    prompt,
 		MaxTokens: generateTokens,

@@ -76,11 +76,15 @@ func writeError(w http.ResponseWriter, r *http.Request, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
 
 	case errors.Is(err, ai.ErrNoCredential):
-		// 400, and the message names the fix: an admin stores an OpenRouter key
-		// in the workspace's credentials. Nothing here is secret — the absence
-		// of a key is visible to anyone who tries.
+		// 400, and the message names the selected provider. Nothing here is
+		// secret — the absence of a key is visible to anyone who tries.
+		provider := ai.CredentialProvider
+		var missing ai.NoCredentialError
+		if errors.As(err, &missing) && missing.Provider != "" {
+			provider = missing.Provider
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"error": "this workspace has no " + ai.CredentialProvider + " API key; add one in credentials",
+			"error": "this workspace has no " + provider + " API key; add one in credentials",
 		})
 
 	case errors.Is(err, ai.ErrProvider), errors.Is(err, ai.ErrBadGraph):

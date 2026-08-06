@@ -193,7 +193,8 @@ export function useRevokeInvite(workspaceId: string | undefined) {
  */
 export function useGenerateWorkflow(workspaceId: string | undefined) {
   return useMutation({
-    mutationFn: (prompt: string) => workflows.generate(workspaceId!, prompt),
+    mutationFn: (body: { prompt: string; provider?: string }) =>
+      workflows.generate(workspaceId!, body.prompt, body.provider),
   });
 }
 

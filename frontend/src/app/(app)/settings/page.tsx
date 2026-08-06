@@ -14,7 +14,7 @@ import {
   Input,
   Skeleton,
 } from "@/components/ui";
-import { AI_CREDENTIAL, apiError, roles, type Role } from "@/lib/api";
+import { AI_CREDENTIAL, AI_PROVIDERS, apiError, roles, type Role } from "@/lib/api";
 import {
   useCreateInvite,
   useCredentials,
@@ -62,7 +62,7 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
   const [secret, setSecret] = useState("");
 
   const hasAIKey = keys?.some(
-    (key) => key.provider === AI_CREDENTIAL.provider && key.name === AI_CREDENTIAL.name,
+    (key) => AI_PROVIDERS.includes(key.provider as (typeof AI_PROVIDERS)[number]) && key.name === AI_CREDENTIAL.name,
   );
 
   return (
@@ -79,12 +79,10 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
       {!isPending && !hasAIKey && (
         <Card className="bg-canary-yellow/40">
           <p className="text-body-sm leading-relaxed text-ink">
-            AI generation and <code className="text-[13px]">ai.prompt</code> nodes need an
-            OpenRouter key stored as{" "}
-            <code className="text-[13px]">
-              {AI_CREDENTIAL.provider}/{AI_CREDENTIAL.name}
-            </code>
-            . Without one they fail with a message saying exactly that.
+            AI generation and AI nodes need a key stored as{" "}
+            <code className="text-[13px]">provider/{AI_CREDENTIAL.name}</code>. Choose the
+            provider in the node or generation dialog; without its matching key the run explains
+            exactly what is missing.
           </p>
         </Card>
       )}
@@ -102,7 +100,18 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
         >
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Provider">
-              <Input value={provider} onChange={(e) => setProvider(e.target.value)} required />
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value)}
+                className="h-12 rounded-xl border border-hairline bg-canvas-white px-4 text-body-sm text-ink focus:border-ink/25 focus:outline-none"
+                required
+              >
+                {AI_PROVIDERS.map((option) => (
+                  <option key={option} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Field label="Name">
               <Input value={name} onChange={(e) => setName(e.target.value)} required />
@@ -113,7 +122,7 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder="sk-or-v1-…"
+              placeholder="provider API key"
               required
             />
           </Field>

@@ -31,7 +31,8 @@ func (a *aiAPI) generateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		Prompt string `json:"prompt"`
+		Prompt   string `json:"prompt"`
+		Provider string `json:"provider"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, r, err)
@@ -42,7 +43,7 @@ func (a *aiAPI) generateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	generated, err := a.ai.GenerateWorkflow(r.Context(), chi.URLParam(r, "workspaceID"), body.Prompt)
+	generated, err := a.ai.GenerateWorkflowWithProvider(r.Context(), chi.URLParam(r, "workspaceID"), body.Provider, body.Prompt)
 	if err != nil {
 		writeError(w, r, err)
 		return

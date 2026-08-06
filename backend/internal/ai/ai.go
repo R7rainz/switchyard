@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 )
@@ -21,6 +22,20 @@ type JSONSchema struct {
 // one failure here that is the caller's to fix, so it gets its own sentinel.
 var ErrNoCredential = errors.New("ai: no API key stored for this workspace")
 
+// NoCredentialError keeps the selected provider in the actionable error while
+// preserving errors.Is(err, ErrNoCredential) for callers.
+type NoCredentialError struct{ Provider string }
+
+func (e NoCredentialError) Error() string {
+	provider := e.Provider
+	if provider == "" {
+		provider = ProviderOpenRouter
+	}
+	return ErrNoCredential.Error() + ": " + provider
+}
+
+func (e NoCredentialError) Unwrap() error { return ErrNoCredential }
+
 // ErrProvider wraps anything the model provider returned or did. It never
 // carries the API key, and no error below is built from one.
 var ErrProvider = errors.New("ai: provider failed")
@@ -29,13 +44,19 @@ var ErrProvider = errors.New("ai: provider failed")
 // reaches every model; any other provider is another implementation of Provider
 // behind this same lookup, not a special case above it.
 const (
-	CredentialProvider = "openrouter"
+	ProviderOpenRouter = "openrouter"
+	ProviderOpenAI     = "openai"
+	ProviderAnthropic  = "anthropic"
+	ProviderGemini     = "gemini"
+
+	// CredentialProvider is kept as the default credential key for existing
+	// callers and stored workflows.
+	CredentialProvider = ProviderOpenRouter
 	CredentialName     = "default"
 )
 
-// DefaultModel is used when a node or request does not name one. It is a single
-// constant on purpose — changing the platform default should be one edit, and
-// a workflow that pinned a model keeps it.
+// DefaultModel is the OpenRouter default. Native providers have their own
+// defaults in DefaultModelFor, while a workflow that pinned a model keeps it.
 const DefaultModel = "anthropic/claude-sonnet-4.5"
 
 // Request is one completion. Two roles rather than a message list: nothing here
@@ -43,9 +64,12 @@ const DefaultModel = "anthropic/claude-sonnet-4.5"
 // is a shape that invites callers to invent turn-taking this package does not
 // support.
 type Request struct {
-	Model  string
-	System string
-	Prompt string
+	// Provider selects which workspace credential and adapter to use. Empty
+	// keeps the OpenRouter default for existing workflows.
+	Provider string
+	Model    string
+	System   string
+	Prompt   string
 
 	// MaxTokens bounds the reply. Zero leaves it to the provider.
 	MaxTokens int
@@ -80,15 +104,18 @@ type Credentials interface {
 }
 
 // Service is the AI surface the rest of Switchyard calls. Nothing outside this
-// package talks to a provider, so swapping OpenRouter for anything else is one
-// constructor argument.
+// package talks to a provider, so selecting a provider never leaks into callers.
 type Service struct {
-	provider Provider
-	creds    Credentials
+	providers map[string]Provider
+	creds     Credentials
 }
 
 func NewService(provider Provider, creds Credentials) *Service {
-	return &Service{provider: provider, creds: creds}
+	return NewServiceWithProviders(map[string]Provider{ProviderOpenRouter: provider}, creds)
+}
+
+func NewServiceWithProviders(providers map[string]Provider, creds Credentials) *Service {
+	return &Service{providers: providers, creds: creds}
 }
 
 // Complete runs one completion using workspaceID's own key.
@@ -97,16 +124,38 @@ func NewService(provider Provider, creds Credentials) *Service {
 // revokes its key expects the next run to use the new one, and a cache here
 // would hold plaintext for the life of the process.
 func (s *Service) Complete(ctx context.Context, workspaceID string, req Request) (Response, error) {
-	secret, err := s.creds.Get(ctx, workspaceID, CredentialProvider, CredentialName)
+	providerName := req.Provider
+	if providerName == "" {
+		providerName = ProviderOpenRouter
+	}
+	provider, ok := s.providers[providerName]
+	if !ok || provider == nil {
+		return Response{}, fmt.Errorf("%w: unsupported provider %q", ErrProvider, providerName)
+	}
+
+	secret, err := s.creds.Get(ctx, workspaceID, providerName, CredentialName)
 	if err != nil {
 		if errors.Is(err, credential.ErrNotFound) {
-			return Response{}, ErrNoCredential
+			return Response{}, NoCredentialError{Provider: providerName}
 		}
 		return Response{}, err
 	}
 
 	if req.Model == "" {
-		req.Model = DefaultModel
+		req.Model = DefaultModelFor(providerName)
 	}
-	return s.provider.Complete(ctx, string(secret), req)
+	return provider.Complete(ctx, string(secret), req)
+}
+
+func DefaultModelFor(provider string) string {
+	switch provider {
+	case ProviderOpenAI:
+		return "gpt-4o-mini"
+	case ProviderAnthropic:
+		return "claude-sonnet-5"
+	case ProviderGemini:
+		return "gemini-2.0-flash"
+	default:
+		return DefaultModel
+	}
 }

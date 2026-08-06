@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/R7rainz/switchyard/backend/internal/execution"
@@ -40,4 +41,62 @@ func TestPromptRunnerNeedsAPrompt(t *testing.T) {
 	if err == nil {
 		t.Fatal("a node with no prompt must fail its run")
 	}
+}
+
+func TestDedicatedAIRunners(t *testing.T) {
+	provider := &stubProvider{replies: []string{
+		"hello",
+		"short summary",
+		`{"label":"bug","reasoning":"it reports a failure"}`,
+		`{"label":"bug","reasoning":"it reports a failure"}`,
+		`{"decision":"true","reasoning":"the branch matches"}`,
+	}}
+	runners := Runners(NewService(provider, stubCreds{key: "k"}))
+
+	for _, typeName := range []string{"ai.chat", "ai.summarize", "ai.classification", "ai.decision"} {
+		if _, ok := runners[typeName]; !ok {
+			t.Fatalf("%s is not registered", typeName)
+		}
+	}
+
+	result, err := runners["ai.chat"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"prompt":"hello"}`), WorkspaceID: "ws"})
+	if err != nil || !jsonContains(result.Output, `"text":"hello"`) {
+		t.Fatalf("chat result = %s, err = %v", result.Output, err)
+	}
+	result, err = runners["ai.summarize"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"text":"a long document"}`), WorkspaceID: "ws"})
+	if err != nil || !jsonContains(result.Output, `"text":"short summary"`) {
+		t.Fatalf("summary result = %s, err = %v", result.Output, err)
+	}
+	result, err = runners["ai.classification"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"text":"the test failed","labels":["bug","feature"]}`), WorkspaceID: "ws"})
+	if err != nil || !jsonContains(result.Output, `"label":"bug"`) {
+		t.Fatalf("classification result = %s, err = %v", result.Output, err)
+	}
+	result, err = runners["ai.classification"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"text":"the test failed","labels":"[\"bug\",\"feature\"]"}`), WorkspaceID: "ws"})
+	if err != nil || !jsonContains(result.Output, `"label":"bug"`) {
+		t.Fatalf("classification editable JSON result = %s, err = %v", result.Output, err)
+	}
+	result, err = runners["ai.decision"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"question":"is this ready?"}`), WorkspaceID: "ws"})
+	if err != nil || result.Branch != "true" {
+		t.Fatalf("decision result = %s, branch = %q, err = %v", result.Output, result.Branch, err)
+	}
+
+	if provider.requests[2].JSONSchema == nil || provider.requests[4].JSONSchema == nil {
+		t.Fatal("structured AI nodes did not request JSON schemas")
+	}
+}
+
+func TestDedicatedAIRunnersRejectInvalidStructuredOutput(t *testing.T) {
+	provider := &stubProvider{replies: []string{`{"label":"other","reasoning":"no"}`, `{"decision":"maybe","reasoning":"no"}`}}
+	runners := Runners(NewService(provider, stubCreds{key: "k"}))
+
+	if _, err := runners["ai.classification"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"text":"x","labels":["bug","feature"]}`)}); err == nil {
+		t.Fatal("classification accepted an unknown label")
+	}
+	if _, err := runners["ai.decision"].Run(t.Context(), execution.Input{Data: json.RawMessage(`{"question":"x"}`)}); err == nil {
+		t.Fatal("decision accepted an unknown branch")
+	}
+}
+
+func jsonContains(raw json.RawMessage, fragment string) bool {
+	return strings.Contains(string(raw), fragment)
 }

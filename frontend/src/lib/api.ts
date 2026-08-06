@@ -148,9 +148,9 @@ export const workflows = {
    * own. Put the result straight into `useNodesState`/`useEdgesState`; it is
    * already in React Flow's shape.
    */
-  generate: (workspaceId: string, prompt: string) =>
+  generate: (workspaceId: string, prompt: string, provider?: string) =>
     api
-      .post<Generated>(`${API_PATH}/workspaces/${workspaceId}/workflows/generate`, { prompt })
+      .post<Generated>(`${API_PATH}/workspaces/${workspaceId}/workflows/generate`, { prompt, provider })
       .then((r) => r.data),
 
   feedback: (
@@ -434,8 +434,7 @@ export const credentials = {
       .then(() => undefined),
 };
 
-/**
- * Where the AI service looks for its key. A secret stored under this provider
- * and name is what makes generation and ai.prompt nodes work.
- */
+/** Default credential slot used when no provider is selected. */
 export const AI_CREDENTIAL = { provider: "openrouter", name: "default" } as const;
+export const AI_PROVIDERS = ["openrouter", "openai", "anthropic", "gemini"] as const;
+export type AIProvider = (typeof AI_PROVIDERS)[number];

@@ -89,9 +89,14 @@ func main() {
 	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
 	feedback := aifeedback.NewService(aifeedback.NewPostgresStore(pool))
 
-	// The provider is process-wide and holds no key: a workspace's key is
-	// fetched per call, so one OpenRouter client serves every workspace.
-	assistant := ai.NewService(ai.NewOpenRouter(nil), credentials)
+	// Providers are process-wide and hold no key: a workspace's selected key is
+	// fetched per call, so these clients serve every workspace.
+	assistant := ai.NewServiceWithProviders(map[string]ai.Provider{
+		ai.ProviderOpenRouter: ai.NewOpenRouter(nil),
+		ai.ProviderOpenAI:     ai.NewOpenAI(nil),
+		ai.ProviderAnthropic:  ai.NewAnthropic(nil),
+		ai.ProviderGemini:     ai.NewGemini(nil),
+	}, credentials)
 
 	// Runners the engine knows about. The built-ins need nothing but the
 	// standard library; every other package hands over its own, which is how
