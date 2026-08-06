@@ -12,7 +12,7 @@ import type { ExecutionStatus, WorkflowNode } from "@/lib/api";
 import { paletteFor } from "@/lib/categories";
 import { specFor } from "@/lib/node-types";
 import { relativeTime } from "@/lib/time";
-import { useCancelExecution, useWorkflows, useWorkspace } from "@/lib/queries";
+import { useCancelExecution, useRetryExecution, useWorkflows, useWorkspace } from "@/lib/queries";
 
 /**
  * One run, in full.
@@ -39,6 +39,7 @@ function RunView({ workspaceId }: { workspaceId: string }) {
   const run = useRunState();
   const { data: flows } = useWorkflows(workspaceId);
   const cancel = useCancelExecution(workspaceId);
+  const retry = useRetryExecution(workspaceId);
 
   if (run.loadError) return <ErrorNote>{run.loadError}</ErrorNote>;
 
@@ -64,6 +65,22 @@ function RunView({ workspaceId }: { workspaceId: string }) {
         </div>
 
         <div className="flex items-center gap-3">
+          {(status === "FAILED" || status === "CANCELLED") && (
+            <Button
+              variant="neutral"
+              className="h-9"
+              disabled={retry.isPending}
+              onClick={() =>
+                retry.mutate(record.id, {
+                  onSuccess: (next) => {
+                    window.location.href = `/runs/${next.id}`;
+                  },
+                })
+              }
+            >
+              {retry.isPending ? "Retrying…" : "Retry run"}
+            </Button>
+          )}
           {/* Cancel reaches only runs this process is executing. One that
               finished a moment ago answers 409, which is honest rather than an
               error worth showing. */}
