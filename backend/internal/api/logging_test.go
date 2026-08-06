@@ -122,3 +122,14 @@ func TestRejectedTokenIsLoggedButNotReturned(t *testing.T) {
 		t.Errorf("response body leaked the reason: %s", body)
 	}
 }
+
+func TestLogPathRedactsInviteTokensForBothAPIPaths(t *testing.T) {
+	for _, path := range []string{
+		"/api/invites/secret-token/accept",
+		"/api/v1/invites/secret-token/accept",
+	} {
+		if got := logPath(path); strings.Contains(got, "secret-token") {
+			t.Errorf("logPath(%q) = %q, leaked the invite token", path, got)
+		}
+	}
+}

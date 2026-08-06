@@ -9,6 +9,7 @@ import { getToken } from "./auth-client";
  * JWT — nothing about this request goes through Next.
  */
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8090";
+export const API_PATH = "/api/v1";
 
 /**
  * The client every call to the Go backend goes through.
@@ -59,7 +60,7 @@ export type Workspace = {
 };
 
 export const workspaces = {
-  list: () => api.get<{ workspaces: Workspace[] }>("/api/workspaces").then((r) => r.data.workspaces),
+  list: () => api.get<{ workspaces: Workspace[] }>(`${API_PATH}/workspaces`).then((r) => r.data.workspaces),
 };
 
 /**
@@ -112,14 +113,14 @@ export type Workflow = {
 export const workflows = {
   list: (workspaceId: string) =>
     api
-      .get<{ workflows: Workflow[] }>(`/api/workspaces/${workspaceId}/workflows`)
+      .get<{ workflows: Workflow[] }>(`${API_PATH}/workspaces/${workspaceId}/workflows`)
       .then((r) => r.data.workflows),
 
   get: (workspaceId: string, id: string) =>
-    api.get<Workflow>(`/api/workspaces/${workspaceId}/workflows/${id}`).then((r) => r.data),
+    api.get<Workflow>(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}`).then((r) => r.data),
 
   create: (workspaceId: string, body: { name: string; description?: string; graph: Graph }) =>
-    api.post<Workflow>(`/api/workspaces/${workspaceId}/workflows`, body).then((r) => r.data),
+    api.post<Workflow>(`${API_PATH}/workspaces/${workspaceId}/workflows`, body).then((r) => r.data),
 
   /**
    * Partial update: send only what changed.
@@ -133,11 +134,11 @@ export const workflows = {
     patch: { name?: string; description?: string; graph?: Graph },
   ) =>
     api
-      .patch<Workflow>(`/api/workspaces/${workspaceId}/workflows/${id}`, patch)
+      .patch<Workflow>(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}`, patch)
       .then((r) => r.data),
 
   remove: (workspaceId: string, id: string) =>
-    api.delete(`/api/workspaces/${workspaceId}/workflows/${id}`).then(() => undefined),
+    api.delete(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}`).then(() => undefined),
 
   /**
    * Ask a model for a workflow. Nothing is stored.
@@ -149,7 +150,7 @@ export const workflows = {
    */
   generate: (workspaceId: string, prompt: string) =>
     api
-      .post<Generated>(`/api/workspaces/${workspaceId}/workflows/generate`, { prompt })
+      .post<Generated>(`${API_PATH}/workspaces/${workspaceId}/workflows/generate`, { prompt })
       .then((r) => r.data),
 
   feedback: (
@@ -161,7 +162,7 @@ export const workflows = {
       generated: Generated;
       finalGraph?: Graph;
     },
-  ) => api.post(`/api/workspaces/${workspaceId}/ai/feedback`, body).then(() => undefined),
+  ) => api.post(`${API_PATH}/workspaces/${workspaceId}/ai/feedback`, body).then(() => undefined),
 };
 
 /** A proposed workflow. It has no id, because it does not exist yet. */
@@ -224,7 +225,7 @@ export async function watchExecution(
 
   const url =
     API_URL.replace(/^http/, "ws") +
-    `/api/workspaces/${workspaceId}/executions/${executionId}/events`;
+    `${API_PATH}/workspaces/${workspaceId}/executions/${executionId}/events`;
 
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url, ["bearer", token]);
@@ -301,7 +302,7 @@ export const executions = {
   /** Newest first. An empty workflowId means every run in the workspace. */
   list: (workspaceId: string, options: { workflowId?: string; limit?: number } = {}) =>
     api
-      .get<{ executions: Execution[] }>(`/api/workspaces/${workspaceId}/executions`, {
+      .get<{ executions: Execution[] }>(`${API_PATH}/workspaces/${workspaceId}/executions`, {
         params: { workflowId: options.workflowId, limit: options.limit },
       })
       .then((r) => r.data.executions),
@@ -315,13 +316,13 @@ export const executions = {
    */
   get: (workspaceId: string, id: string) =>
     api
-      .get<ExecutionDetail>(`/api/workspaces/${workspaceId}/executions/${id}`)
+      .get<ExecutionDetail>(`${API_PATH}/workspaces/${workspaceId}/executions/${id}`)
       .then((r) => r.data),
 
   start: (workspaceId: string, workflowId: string, input?: unknown, idempotencyKey = crypto.randomUUID()) =>
     api
       .post<Execution>(
-        `/api/workspaces/${workspaceId}/workflows/${workflowId}/executions`,
+        `${API_PATH}/workspaces/${workspaceId}/workflows/${workflowId}/executions`,
         input === undefined ? undefined : { input },
         { headers: { "Idempotency-Key": idempotencyKey } },
       )
@@ -330,7 +331,7 @@ export const executions = {
   retry: (workspaceId: string, executionId: string, idempotencyKey = crypto.randomUUID()) =>
     api
       .post<Execution>(
-        `/api/workspaces/${workspaceId}/executions/${executionId}/retry`,
+        `${API_PATH}/workspaces/${workspaceId}/executions/${executionId}/retry`,
         undefined,
         { headers: { "Idempotency-Key": idempotencyKey } },
       )
@@ -340,7 +341,7 @@ export const executions = {
 /** Cancel reaches only runs this process is executing; a finished run 409s. */
 export const cancelExecution = (workspaceId: string, executionId: string) =>
   api
-    .post(`/api/workspaces/${workspaceId}/executions/${executionId}/cancel`)
+    .post(`${API_PATH}/workspaces/${workspaceId}/executions/${executionId}/cancel`)
     .then(() => undefined);
 
 /**
@@ -367,20 +368,20 @@ export type Invite = {
 export const members = {
   list: (workspaceId: string) =>
     api
-      .get<{ members: Member[] }>(`/api/workspaces/${workspaceId}/members`)
+      .get<{ members: Member[] }>(`${API_PATH}/workspaces/${workspaceId}/members`)
       .then((r) => r.data.members),
 
   setRole: (workspaceId: string, userId: string, role: Role) =>
-    api.patch(`/api/workspaces/${workspaceId}/members/${userId}`, { role }).then(() => undefined),
+    api.patch(`${API_PATH}/workspaces/${workspaceId}/members/${userId}`, { role }).then(() => undefined),
 
   remove: (workspaceId: string, userId: string) =>
-    api.delete(`/api/workspaces/${workspaceId}/members/${userId}`).then(() => undefined),
+    api.delete(`${API_PATH}/workspaces/${workspaceId}/members/${userId}`).then(() => undefined),
 };
 
 export const invites = {
   list: (workspaceId: string) =>
     api
-      .get<{ invites: Invite[] }>(`/api/workspaces/${workspaceId}/invites`)
+      .get<{ invites: Invite[] }>(`${API_PATH}/workspaces/${workspaceId}/invites`)
       .then((r) => r.data.invites),
 
   /**
@@ -390,16 +391,16 @@ export const invites = {
   create: (workspaceId: string, body: { role: Role; email?: string; maxUses?: number }) =>
     api
       .post<{ invite: Invite; token: string; joinURL: string }>(
-        `/api/workspaces/${workspaceId}/invites`,
+        `${API_PATH}/workspaces/${workspaceId}/invites`,
         body,
       )
       .then((r) => r.data),
 
   revoke: (workspaceId: string, inviteId: string) =>
-    api.delete(`/api/workspaces/${workspaceId}/invites/${inviteId}`).then(() => undefined),
+    api.delete(`${API_PATH}/workspaces/${workspaceId}/invites/${inviteId}`).then(() => undefined),
 
   accept: (token: string) =>
-    api.post<Workspace>(`/api/invites/${token}/accept`).then((r) => r.data),
+    api.post<Workspace>(`${API_PATH}/invites/${token}/accept`).then((r) => r.data),
 };
 
 /**
@@ -418,18 +419,18 @@ export type Credential = {
 export const credentials = {
   list: (workspaceId: string) =>
     api
-      .get<{ credentials: Credential[] }>(`/api/workspaces/${workspaceId}/credentials`)
+      .get<{ credentials: Credential[] }>(`${API_PATH}/workspaces/${workspaceId}/credentials`)
       .then((r) => r.data.credentials),
 
   /** Replaces whatever was held under the same provider and name. */
   put: (workspaceId: string, provider: string, name: string, secret: string) =>
     api
-      .put(`/api/workspaces/${workspaceId}/credentials/${provider}/${name}`, { secret })
+      .put(`${API_PATH}/workspaces/${workspaceId}/credentials/${provider}/${name}`, { secret })
       .then(() => undefined),
 
   remove: (workspaceId: string, provider: string, name: string) =>
     api
-      .delete(`/api/workspaces/${workspaceId}/credentials/${provider}/${name}`)
+      .delete(`${API_PATH}/workspaces/${workspaceId}/credentials/${provider}/${name}`)
       .then(() => undefined),
 };
 

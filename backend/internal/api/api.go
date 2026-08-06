@@ -86,9 +86,17 @@ func NewRouter(deps Deps) http.Handler {
 	runs := &executionAPI{executions: deps.Executions, events: deps.Events}
 	assist := &aiAPI{ai: deps.AI, feedback: deps.Feedback}
 	githubHooks := &githubWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
+	// Webhooks authenticate with their provider signature rather than a user
+	// JWT, so they stay outside the protected API group. Keep the old path for
+	// existing GitHub installations while exposing the versioned contract.
+	router.Post("/api/v1/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 
-	router.Route("/api", func(r chi.Router) {
+	// V1 is the canonical public API path. Keep /api as an alias while clients
+	// migrate; versioning the path lets future breaking changes ship beside
+	// this contract without forcing the frontend and integrations to move at
+	// the same time.
+	mountAPI := func(r chi.Router) {
 		r.Use(RequireAuth(verifier, logger))
 		r.Get("/me", handleMe)
 
@@ -169,7 +177,9 @@ func NewRouter(deps Deps) http.Handler {
 		// yet, which is the entire point of an invite. It still needs a token,
 		// because the invite grants membership to a user, not to a browser.
 		r.Post("/invites/{token}/accept", ws.acceptInvite)
-	})
+	}
+	router.Route("/api/v1", mountAPI)
+	router.Route("/api", mountAPI)
 
 	return router
 }
@@ -243,10 +253,13 @@ func RequireAuth(verifier TokenVerifier, logger zerolog.Logger) func(http.Handle
 	}
 }
 
-// invitePrefix is where the accept route lives. An invite token travels in
+// invitePrefixes are where the accept route lives. An invite token travels in
 // that URL and is a bearer credential, so the path is the one field that has to
 // be edited before it is written down.
-const invitePrefix = "/api/invites/"
+const (
+	invitePrefix   = "/api/invites/"
+	inviteV1Prefix = "/api/v1/invites/"
+)
 
 // logPath strips the invite token out of a request path. A log line is exactly
 // the place a token must not end up: anyone reading the log could otherwise
@@ -254,6 +267,9 @@ const invitePrefix = "/api/invites/"
 func logPath(path string) string {
 	if strings.HasPrefix(path, invitePrefix) {
 		return invitePrefix + "{token}/accept"
+	}
+	if strings.HasPrefix(path, inviteV1Prefix) {
+		return inviteV1Prefix + "{token}/accept"
 	}
 	return path
 }

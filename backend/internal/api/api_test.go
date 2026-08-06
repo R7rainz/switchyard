@@ -109,6 +109,19 @@ func TestRequireAuthAcceptsValidTokenAndPassesClaims(t *testing.T) {
 	}
 }
 
+func TestVersionedAPIPathAcceptsValidToken(t *testing.T) {
+	router := testRouter(&stubVerifier{accept: "good"}, testLogger())
+
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+	request.Header.Set("Authorization", "Bearer good")
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", recorder.Code, recorder.Body)
+	}
+}
+
 func TestRequireAuthAcceptsLowercaseScheme(t *testing.T) {
 	// RFC 7235 makes the scheme case-insensitive, and clients do vary.
 	router := testRouter(&stubVerifier{accept: "good"}, testLogger())
