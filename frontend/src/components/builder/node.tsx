@@ -3,7 +3,7 @@
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 
 import { paletteFor } from "@/lib/categories";
-import { conditionHandles, specFor } from "@/lib/node-types";
+import { conditionHandles, specFor, switchHandles } from "@/lib/node-types";
 import { cx } from "@/components/ui";
 import { useNodeStatus } from "./run-state";
 
@@ -73,20 +73,20 @@ export function BuilderNode({ id, type, data, selected }: NodeProps) {
         <span className="truncate text-[10px] text-stone">{id}</span>
       </div>
 
-      {type === "logic.condition" ? (
-        // Two named outputs. The handle id becomes the edge's sourceHandle, and
+      {type === "logic.condition" || type === "logic.switch" || type === "ai.decision" ? (
+        // Named outputs. The handle id becomes the edge's sourceHandle, and
         // the engine follows an edge only when that name matches the branch the
         // node returned — so these strings are a contract, not decoration.
-        conditionHandles.map((branch, index) => (
+        (type === "logic.switch" ? switchHandles(data as Record<string, unknown>) : conditionHandles).map((branch, index, handles) => (
           <Handle
             key={branch}
             id={branch}
             type="source"
             position={Position.Right}
-            style={{ top: `${38 + index * 26}%` }}
+            style={{ top: `${50 + (index - (handles.length - 1) / 2) * 24}%` }}
             className={cx(
               "!size-2.5 !border-2 !border-canvas-white",
-              branch === "true" ? "!bg-mint-green" : "!bg-phoenix-orange",
+              branch === "false" || branch === "default" ? "!bg-phoenix-orange" : "!bg-mint-green",
             )}
           />
         ))
@@ -112,9 +112,15 @@ export const nodeTypes = Object.fromEntries(
     "trigger.schedule",
     "trigger.github.pull_request",
     "logic.condition",
+    "logic.switch",
+    "logic.delay",
     "variable.set",
     "http.request",
     "ai.prompt",
+    "ai.chat",
+    "ai.summarize",
+    "ai.classification",
+    "ai.decision",
     "github.pull_request",
     "slack.message",
   ].map((type) => [type, BuilderNode]),

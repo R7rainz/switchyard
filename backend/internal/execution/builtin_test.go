@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 )
@@ -197,6 +198,61 @@ func TestCondition(t *testing.T) {
 	}
 }
 
+func TestSwitch(t *testing.T) {
+	cases := []struct {
+		name   string
+		data   string
+		branch string
+	}{
+		{name: "matching string", data: `{"value":"opened","cases":["opened","closed"]}`, branch: "opened"},
+		{name: "editable JSON string", data: `{"value":"opened","cases":"[\"opened\",\"closed\"]"}`, branch: "opened"},
+		{name: "matching number", data: `{"value":2,"cases":["1","2"]}`, branch: "2"},
+		{name: "default", data: `{"value":"unknown","cases":["opened","closed"]}`, branch: "default"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := runSwitch(t.Context(), Input{Data: json.RawMessage(tc.data)})
+			if err != nil {
+				t.Fatalf("runSwitch: %v", err)
+			}
+			if result.Branch != tc.branch {
+				t.Fatalf("branch = %q, want %q", result.Branch, tc.branch)
+			}
+		})
+	}
+
+	for _, data := range []string{
+		`{"value":"x","cases":[]}`,
+		`{"value":"x","cases":["x","x"]}`,
+		`{"value":"x","cases":["default"]}`,
+	} {
+		if _, err := runSwitch(t.Context(), Input{Data: json.RawMessage(data)}); err == nil {
+			t.Fatalf("runSwitch(%s) succeeded, want invalid case error", data)
+		}
+	}
+}
+
+func TestDelay(t *testing.T) {
+	started := time.Now()
+	result, err := runDelay(t.Context(), Input{Data: json.RawMessage(`{"duration":"5ms"}`)})
+	if err != nil {
+		t.Fatalf("runDelay: %v", err)
+	}
+	if time.Since(started) < 5*time.Millisecond {
+		t.Fatal("delay returned before its duration")
+	}
+	var output map[string]string
+	if err := json.Unmarshal(result.Output, &output); err != nil || output["duration"] != "5ms" {
+		t.Fatalf("output = %s", result.Output)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := runDelay(ctx, Input{Data: json.RawMessage(`{"duration":"1s"}`)}); err == nil {
+		t.Fatal("cancelled delay succeeded")
+	}
+}
+
 // A variable node names values for the nodes after it, so a later reference is
 // .nodes.<id>.<name> — the same shape as every other node's output, rather than
 // a wrapper only this node type has.
@@ -218,6 +274,12 @@ func TestSetVariable(t *testing.T) {
 	// The canvas label is not a variable.
 	if _, leaked := named["label"]; leaked {
 		t.Fatalf("the node's label leaked into its output: %s", result.Output)
+	}
+	result, err = runSetVariable(t.Context(), Input{
+		Data: json.RawMessage(`{"label":"Facts","values":"{\"repo\":\"switchyard\"}"}`),
+	})
+	if err != nil || string(result.Output) != `{"repo":"switchyard"}` {
+		t.Fatalf("editable JSON output = %s, err = %v", result.Output, err)
 	}
 	if result.Branch != "" {
 		t.Fatalf("a variable node picked a branch: %q", result.Branch)

@@ -9,7 +9,7 @@ import { Button, Eyebrow, Input, Textarea, cx } from "@/components/ui";
 import { RunStatus } from "@/components/run-status";
 import { useNodeResult } from "./run-state";
 
-/** The list of node types you can add, grouped nowhere — there are seven. */
+/** The list of node types you can add, grouped nowhere. */
 export function Palette({ onAdd }: { onAdd: (type: string) => void }) {
   return (
     <aside className="flex w-56 shrink-0 flex-col gap-2 overflow-y-auto border-r border-hairline bg-canvas-white p-4">

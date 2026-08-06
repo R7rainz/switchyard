@@ -9,6 +9,8 @@
  * fails its first run.
  */
 
+import { AI_PROVIDERS } from "./api";
+
 export type FieldKind = "text" | "textarea" | "select" | "json";
 
 export type NodeField = {
@@ -30,6 +32,14 @@ export type NodeSpec = {
 /** The reference every field hint points at, written once. */
 const templateHint =
   "Reference an earlier node with {{ .nodes.<id>.<field> }}, or the payload with {{ .trigger.<field> }}. Wrap a value that may contain quotes as {{ json . }}.";
+
+const aiProviderField: NodeField = {
+  key: "provider",
+  label: "Provider",
+  kind: "select",
+  options: [...AI_PROVIDERS],
+  hint: "Leave as Default to use OpenRouter, or store the matching provider/default key in workspace settings.",
+};
 
 export const nodeSpecs: NodeSpec[] = [
   {
@@ -67,6 +77,41 @@ export const nodeSpecs: NodeSpec[] = [
         kind: "text",
         placeholder: '{{ if eq .trigger.branch "main" }}true{{ else }}false{{ end }}',
         hint: `Renders to true or false, then leaves by the matching handle. ${templateHint}`,
+      },
+    ],
+  },
+  {
+    type: "logic.switch",
+    label: "Switch",
+    summary: "Routes a value to a matching case or the default path.",
+    fields: [
+      {
+        key: "value",
+        label: "Value",
+        kind: "text",
+        placeholder: "{{ .trigger.action }}",
+        hint: templateHint,
+      },
+      {
+        key: "cases",
+        label: "Cases",
+        kind: "json",
+        placeholder: '["opened", "closed"]',
+        hint: "Use a JSON array of unique strings. Connect the default handle for unmatched values.",
+      },
+    ],
+  },
+  {
+    type: "logic.delay",
+    label: "Delay",
+    summary: "Waits before continuing to the next node.",
+    fields: [
+      {
+        key: "duration",
+        label: "Duration",
+        kind: "text",
+        placeholder: "5s",
+        hint: "Use Go duration syntax such as 500ms, 5s, or 1m.",
       },
     ],
   },
@@ -111,6 +156,7 @@ export const nodeSpecs: NodeSpec[] = [
     label: "AI prompt",
     summary: "Asks a model. Outputs its text.",
     fields: [
+      aiProviderField,
       {
         key: "prompt",
         label: "Prompt",
@@ -126,6 +172,51 @@ export const nodeSpecs: NodeSpec[] = [
         placeholder: "anthropic/claude-sonnet-4.5",
         hint: "Leave empty to use the workspace default.",
       },
+    ],
+  },
+  {
+    type: "ai.chat",
+    label: "Chat",
+    summary: "Has a conversational model answer a prompt.",
+    fields: [
+      aiProviderField,
+      { key: "prompt", label: "Prompt", kind: "textarea", placeholder: "Explain the deployment result." },
+      { key: "system", label: "System", kind: "textarea", placeholder: "Be concise and factual." },
+      { key: "model", label: "Model", kind: "text", placeholder: "anthropic/claude-sonnet-4.5" },
+    ],
+  },
+  {
+    type: "ai.summarize",
+    label: "Summarize",
+    summary: "Turns a longer input into a concise summary.",
+    fields: [
+      aiProviderField,
+      { key: "text", label: "Text", kind: "textarea", placeholder: "{{ .nodes.fetch.body.description }}", hint: templateHint },
+      { key: "instructions", label: "Instructions", kind: "textarea", placeholder: "Keep it to three bullets." },
+      { key: "model", label: "Model", kind: "text", placeholder: "anthropic/claude-sonnet-4.5" },
+    ],
+  },
+  {
+    type: "ai.classification",
+    label: "Classification",
+    summary: "Assigns one label to text using a fixed set of choices.",
+    fields: [
+      aiProviderField,
+      { key: "text", label: "Text", kind: "textarea", placeholder: "{{ .trigger.title }}", hint: templateHint },
+      { key: "labels", label: "Labels", kind: "json", placeholder: '["bug", "feature", "question"]' },
+      { key: "model", label: "Model", kind: "text", placeholder: "anthropic/claude-sonnet-4.5" },
+    ],
+  },
+  {
+    type: "ai.decision",
+    label: "Decision",
+    summary: "Answers true or false and routes the workflow accordingly.",
+    fields: [
+      aiProviderField,
+      { key: "question", label: "Question", kind: "textarea", placeholder: "Is this ready to deploy?" },
+      { key: "context", label: "Context", kind: "textarea", placeholder: "{{ .nodes.tests.body }}", hint: templateHint },
+      { key: "system", label: "System", kind: "textarea", placeholder: "Decide conservatively." },
+      { key: "model", label: "Model", kind: "text", placeholder: "anthropic/claude-sonnet-4.5" },
     ],
   },
   {
@@ -153,3 +244,18 @@ export const specFor = (type: string) => nodeSpecs.find((spec) => spec.type === 
  * an edge's sourceHandle against. These two strings are a contract with Go.
  */
 export const conditionHandles = ["true", "false"] as const;
+
+export function switchHandles(data?: Record<string, unknown>) {
+  let raw = data?.cases;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      raw = [];
+    }
+  }
+  const cases = Array.isArray(raw)
+    ? raw.filter((value): value is string => typeof value === "string" && value.trim() !== "" && value !== "default")
+    : [];
+  return [...new Set([...cases, "default"])] as string[];
+}
