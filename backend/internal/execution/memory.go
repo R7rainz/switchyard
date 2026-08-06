@@ -28,6 +28,13 @@ func runKey(workspaceID, id string) string { return workspaceID + "\x00" + id }
 func (m *MemoryStore) Create(_ context.Context, e Execution) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if e.IdempotencyKey != "" {
+		for _, run := range m.runs {
+			if run.WorkspaceID == e.WorkspaceID && run.IdempotencyKey == e.IdempotencyKey {
+				return ErrIdempotencyConflict
+			}
+		}
+	}
 	m.runs[runKey(e.WorkspaceID, e.ID)] = e
 	return nil
 }
@@ -40,6 +47,17 @@ func (m *MemoryStore) Get(_ context.Context, workspaceID, id string) (Execution,
 		return Execution{}, ErrNotFound
 	}
 	return run, nil
+}
+
+func (m *MemoryStore) GetByIdempotencyKey(_ context.Context, workspaceID, key string) (Execution, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, run := range m.runs {
+		if run.WorkspaceID == workspaceID && run.IdempotencyKey == key {
+			return run, nil
+		}
+	}
+	return Execution{}, ErrNotFound
 }
 
 func (m *MemoryStore) List(_ context.Context, workspaceID, workflowID string, limit int) ([]Execution, error) {

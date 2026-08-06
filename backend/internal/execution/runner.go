@@ -12,6 +12,7 @@ const (
 	TriggerManual   = "manual"
 	TriggerWebhook  = "webhook"
 	TriggerSchedule = "schedule"
+	TriggerRetry    = "retry"
 )
 
 // Input is everything a node is given.

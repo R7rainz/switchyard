@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,7 +50,11 @@ func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 					seen[flow.ID] = slot
 					mu.Unlock()
 					if !duplicate {
-						_, _ = s.Start(ctx, flow.WorkspaceID, flow.ID, "", TriggerSchedule, nil)
+						// The durable key also covers a restart or a second process:
+						// one workflow slot can create one run, even if the local
+						// seen map was lost.
+						key := fmt.Sprintf("schedule:%s:%s", flow.ID, slot.Format("20060102T150405Z"))
+						_, _ = s.StartWithIdempotencyKey(ctx, flow.WorkspaceID, flow.ID, "", TriggerSchedule, nil, key)
 					}
 				}
 			}

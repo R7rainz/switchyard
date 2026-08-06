@@ -34,14 +34,27 @@ func (s *PostgresStore) Create(ctx context.Context, e Execution) error {
 
 	_, err = s.pool.Exec(ctx,
 		`insert into "execution"
-		   ("id", "workspaceId", "workflowId", "graph", "status", "trigger", "input", "startedBy", "createdAt")
-		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		   ("id", "workspaceId", "workflowId", "graph", "status", "trigger", "input", "startedBy", "createdAt", "retryOf", "idempotencyKey")
+		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
 		e.ID, e.WorkspaceID, nullString(e.WorkflowID), graph, string(e.Status),
-		e.Trigger, nullJSON(e.Input), nullString(e.StartedBy), e.CreatedAt)
+		e.Trigger, nullJSON(e.Input), nullString(e.StartedBy), e.CreatedAt,
+		nullString(e.RetryOf), nullString(e.IdempotencyKey))
 	if err != nil {
 		return fmt.Errorf("execution: creating: %w", err)
 	}
 	return nil
+}
+
+func (s *PostgresStore) GetByIdempotencyKey(ctx context.Context, workspaceID, key string) (Execution, error) {
+	row := s.pool.QueryRow(ctx, executionColumns+` where "workspaceId" = $1 and "idempotencyKey" = $2`, workspaceID, key)
+	run, err := scanExecution(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Execution{}, ErrNotFound
+	}
+	if err != nil {
+		return Execution{}, fmt.Errorf("execution: loading by idempotency key: %w", err)
+	}
+	return run, nil
 }
 
 // Get filters on the workspace as well as the id, so an execution id from
@@ -193,24 +206,27 @@ func (s *PostgresStore) Reclaim(ctx context.Context, message string) (int, error
 }
 
 const executionColumns = `select "id", "workspaceId", "workflowId", "graph", "status",
-	"trigger", "input", "error", "startedBy", "createdAt", "startedAt", "finishedAt"
+	"trigger", "input", "error", "startedBy", "createdAt", "startedAt", "finishedAt", "retryOf", "idempotencyKey"
 	from "execution"`
 
 func scanExecution(row pgx.Row) (Execution, error) {
 	var (
-		run        Execution
-		workflowID *string
-		graph      []byte
-		status     string
-		input      []byte
-		message    *string
-		startedBy  *string
-		startedAt  *time.Time
-		finishedAt *time.Time
+		run            Execution
+		workflowID     *string
+		graph          []byte
+		status         string
+		input          []byte
+		message        *string
+		startedBy      *string
+		startedAt      *time.Time
+		finishedAt     *time.Time
+		retryOf        *string
+		idempotencyKey *string
 	)
 
 	if err := row.Scan(&run.ID, &run.WorkspaceID, &workflowID, &graph, &status,
-		&run.Trigger, &input, &message, &startedBy, &run.CreatedAt, &startedAt, &finishedAt); err != nil {
+		&run.Trigger, &input, &message, &startedBy, &run.CreatedAt, &startedAt, &finishedAt,
+		&retryOf, &idempotencyKey); err != nil {
 		return Execution{}, err
 	}
 	if err := json.Unmarshal(graph, &run.Graph); err != nil {
@@ -233,6 +249,12 @@ func scanExecution(row pgx.Row) (Execution, error) {
 	}
 	if finishedAt != nil {
 		run.FinishedAt = *finishedAt
+	}
+	if retryOf != nil {
+		run.RetryOf = *retryOf
+	}
+	if idempotencyKey != nil {
+		run.IdempotencyKey = *idempotencyKey
 	}
 	return run, nil
 }
