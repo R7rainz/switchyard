@@ -41,6 +41,24 @@ func TestPreflightIsAnsweredWithoutAToken(t *testing.T) {
 	}
 }
 
+func TestPreflightAllowsCredentialPut(t *testing.T) {
+	router := corsRouter(t)
+
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/workspaces/ws/credentials/openapi/personal-key", nil)
+	request.Header.Set("Origin", frontendOrigin)
+	request.Header.Set("Access-Control-Request-Method", http.MethodPut)
+
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204", recorder.Code)
+	}
+	if got := recorder.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPut) {
+		t.Errorf("Allow-Methods = %q, want it to permit PUT", got)
+	}
+}
+
 func TestAnotherOriginIsNotAllowed(t *testing.T) {
 	// A wildcard would let any page drive this API with a token it obtained.
 	router := corsRouter(t)
