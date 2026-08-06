@@ -44,27 +44,17 @@ func gatedGraph(url string) string {
 	}`
 }
 
-// gate is an endpoint that does not answer until released.
-func gate(t *testing.T) (url string, release func()) {
+// gate is a runner that does not answer until released. It avoids using a
+// loopback HTTP server here: production HTTP nodes correctly reject loopback
+// addresses as SSRF, while this test only needs a run that stays open.
+func gate(t *testing.T) (release func(), wait <-chan struct{}) {
 	t.Helper()
 
 	released := make(chan struct{})
 	var once sync.Once
 	release = func() { once.Do(func() { close(released) }) }
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-released:
-		case <-r.Context().Done():
-		}
-		_, _ = w.Write([]byte(`{"ok":true}`))
-	}))
-	// Registered after Close so it runs before it: cleanups are LIFO, and
-	// closing a server with a handler still parked inside it hangs.
-	t.Cleanup(server.Close)
 	t.Cleanup(release)
-
-	return server.URL, release
+	return release, released
 }
 
 type streamHarness struct {
@@ -77,14 +67,18 @@ type streamHarness struct {
 // streamServer runs the production router on a real listener, with the same
 // write timeout the API server uses, so the stream meets the middleware chain
 // and the connection handling it will meet in production.
-func streamServer(t *testing.T) streamHarness {
+func streamServer(t *testing.T, extras ...execution.Registry) streamHarness {
 	t.Helper()
 
 	workspaces := workspace.NewService(workspace.NewMemoryStore())
 	workflows := workflow.NewService(workflow.NewMemoryStore())
 	hub := websocket.NewHub(testAppURL)
+	runners := execution.Builtin(nil)
+	for _, extra := range extras {
+		runners.Add(extra)
+	}
 	executions := execution.NewService(
-		execution.NewMemoryStore(), workflows, execution.Builtin(nil),
+		execution.NewMemoryStore(), workflows, runners,
 		execution.Options{Events: hub})
 
 	handler := NewRouter(Deps{
@@ -108,6 +102,17 @@ func streamServer(t *testing.T) streamHarness {
 		workspaces: workspaces,
 		hub:        hub,
 	}
+}
+
+func gatedRunner(wait <-chan struct{}) execution.Runner {
+	return execution.RunnerFunc(func(ctx context.Context, _ execution.Input) (execution.Result, error) {
+		select {
+		case <-wait:
+			return execution.Result{Output: json.RawMessage(`{"status":200,"body":{"ok":true}}`)}, nil
+		case <-ctx.Done():
+			return execution.Result{}, ctx.Err()
+		}
+	})
 }
 
 // watch opens the stream as userID, carrying the token the way a browser has
@@ -146,13 +151,13 @@ func nextEvent(t *testing.T, conn *coder.Conn) execution.Event {
 // outcome. This is the explainability requirement arriving live rather than on
 // a refresh.
 func TestStreamCarriesARunsProgress(t *testing.T) {
-	h := streamServer(t)
+	release, wait := gate(t)
+	h := streamServer(t, execution.Registry{"http.request": gatedRunner(wait)})
 	ws := firstWorkspace(t, h.handler, "alice")
 	base := "/api/workspaces/" + ws
 
-	url, release := gate(t)
 	_, created := call(t, h.handler, http.MethodPost, base+"/workflows", "alice",
-		`{"name":"streamed","graph":`+gatedGraph(url)+`}`)
+		`{"name":"streamed","graph":`+gatedGraph("https://example.com/wait")+`}`)
 	workflowID := field(t, created, "id")
 
 	status, started := call(t, h.handler, http.MethodPost,
@@ -191,13 +196,13 @@ func TestStreamCarriesARunsProgress(t *testing.T) {
 // A node's own result arrives, not just the run's, or the viewer cannot show
 // which step is where.
 func TestStreamCarriesNodeResults(t *testing.T) {
-	h := streamServer(t)
+	release, wait := gate(t)
+	h := streamServer(t, execution.Registry{"http.request": gatedRunner(wait)})
 	ws := firstWorkspace(t, h.handler, "alice")
 	base := "/api/workspaces/" + ws
 
-	url, release := gate(t)
 	_, created := call(t, h.handler, http.MethodPost, base+"/workflows", "alice",
-		`{"name":"streamed","graph":`+gatedGraph(url)+`}`)
+		`{"name":"streamed","graph":`+gatedGraph("https://example.com/wait")+`}`)
 	workflowID := field(t, created, "id")
 
 	_, started := call(t, h.handler, http.MethodPost,
