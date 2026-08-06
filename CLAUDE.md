@@ -78,7 +78,7 @@ templates.
 | Backend   | Go + Chi              |                                          |
 | Database  | PostgreSQL            | JSON columns for graphs                  |
 | Realtime  | WebSockets            | Live execution updates                   |
-| AI        | Provider abstraction  | Default **OpenRouter** — one key, many models; OpenAI/Anthropic/Gemini behind the same interface, Azure later |
+| AI        | Provider abstraction  | Default **OpenRouter**; native OpenAI, Anthropic, and Gemini adapters share the same interface, Azure later |
 | Storage   | Local now, S3 later   | Execution artifacts and uploads          |
 
 ### Frontend stack
@@ -519,8 +519,8 @@ pins it.
 **Runners live with their integration.** `Registry` maps a node type to a
 `Runner`; GitHub nodes belong in `internal/github` and so on. `Builtin` holds
 only the ones needing nothing but stdlib — triggers, `logic.condition`,
-`variable.set`, and `http.request` — because a package containing one function
-is ceremony, not a boundary.
+`logic.switch`, `logic.delay`, `variable.set`, and `http.request` — because a
+package containing one function is ceremony, not a boundary.
 
 **`variable.set` computes nothing.** The template layer has already substituted
 its data; it only decides what the node's output is. Its `values` object
@@ -565,8 +565,9 @@ nothing back, so there is no cycle.
 ### AI
 
 **`internal/ai` is the only package that talks to a model.** Two jobs:
-generating a workflow graph from a description, and running `ai.prompt` nodes.
-No migration — the key is an ordinary credential.
+generating a workflow graph from a description, and running the AI node types
+(`ai.prompt`, `ai.chat`, `ai.summarize`, `ai.classification`, and
+`ai.decision`). No migration — the key is an ordinary credential.
 
 **Generating stores nothing.** `POST .../workflows/generate` returns
 `{name, description, graph}` and creates no row. The canvas opens with it and
@@ -575,12 +576,13 @@ it. That is "AI assists, never owns" in one route: a generate-and-save would
 put a workflow in the list nobody has read. It sits at `workflow:write`
 anyway — it spends the workspace's model budget.
 
-**The key is a per-workspace credential** (`openrouter`/`default`), fetched
-per call, never cached and never held on a struct. `Provider.Complete` takes
-the key as a *parameter* rather than a field for that reason: one process-wide
-provider serves every workspace and no long-lived value holds a secret. A
-workspace with no key gets `ErrNoCredential` → **400 naming the fix**, not the
-502 an upstream failure gets.
+**The key is a per-workspace credential** (`<provider>`/`default`), fetched per
+call, never cached and never held on a struct. Supported providers are
+`openrouter` (the default), `openai`, `anthropic`, and `gemini`. `Provider.Complete`
+takes the key as a *parameter* rather than a field for that reason: one
+process-wide provider serves every workspace and no long-lived value holds a
+secret. A workspace with no key gets `ErrNoCredential` → **400 naming the fix**,
+not the 502 an upstream failure gets.
 
 **The generated graph is checked with `Validate`, not `Runnable`.** It is a
 draft heading for a canvas, so the same half-finished states a person may save
@@ -612,7 +614,7 @@ the model's.
 **The deadline lives on the caller's context, not on the HTTP client.** The two
 callers are not the same: generation answers an HTTP request and has to fit
 under the server's 30s write timeout (`generateTimeout`, 25s, covering both
-attempts), while an `ai.prompt` node has the engine's per-node budget and
+attempts), while an AI node has the engine's per-node budget and
 nobody waiting on a connection. A client timeout tuned for the first silently
 cut the second short — two mechanisms bounding one call is how that happens
 unnoticed. `openRouterBackstop` is 2 minutes and exists only so a caller that
