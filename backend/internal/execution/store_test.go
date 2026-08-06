@@ -50,7 +50,9 @@ func runStoreContract(t *testing.T, newStore func(*testing.T) Store) {
 
 	t.Run("round trips a run and its snapshot", func(t *testing.T) {
 		store := newStore(t)
-		if err := store.Create(ctx, sampleRun("r1", wsA, baseTime)); err != nil {
+		run := sampleRun("r1", wsA, baseTime)
+		run.IdempotencyKey = "request-1"
+		if err := store.Create(ctx, run); err != nil {
 			t.Fatalf("Create: %v", err)
 		}
 
@@ -68,6 +70,13 @@ func runStoreContract(t *testing.T, newStore func(*testing.T) Store) {
 		// way in, and it is the value that matters, not its formatting.
 		if !jsonEq(t, got.Input, `{"repo":"main"}`) {
 			t.Fatalf("input = %s", got.Input)
+		}
+		if got.IdempotencyKey != "request-1" {
+			t.Fatalf("idempotency metadata did not survive: %+v", got)
+		}
+		byKey, err := store.GetByIdempotencyKey(ctx, wsA, "request-1")
+		if err != nil || byKey.ID != "r1" {
+			t.Fatalf("GetByIdempotencyKey = %v, %v", byKey, err)
 		}
 	})
 
