@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -49,7 +50,11 @@ func (s *Service) StartScheduler(ctx context.Context, interval time.Duration) {
 					seen[flow.ID] = slot
 					mu.Unlock()
 					if !duplicate {
-						_, _ = s.Start(ctx, flow.WorkspaceID, flow.ID, "", TriggerSchedule, nil)
+						// The durable key also covers a restart or a second process:
+						// one workflow slot can create one run, even if the local
+						// seen map was lost.
+						key := fmt.Sprintf("schedule:%s:%s", flow.ID, slot.Format("20060102T150405Z"))
+						_, _ = s.StartWithIdempotencyKey(ctx, flow.WorkspaceID, flow.ID, "", TriggerSchedule, nil, key)
 					}
 				}
 			}
@@ -143,10 +148,14 @@ func cronFieldMatches(raw string, value, min, max int) bool {
 		if low < min || high > max || low > high {
 			return false
 		}
-		for _, candidate := range []int{value, 7} {
-			if candidate == 7 && (max != 7 || value != 0) {
-				continue
-			}
+		candidates := []int{value}
+		// Cron permits Sunday as either 0 or 7. Only the weekday field has
+		// max=7; treating every numeric 7 as that alias makes 07:00 and the
+		// 7th day of the month disappear from otherwise valid schedules.
+		if max == 7 && value == 0 {
+			candidates = append(candidates, 7)
+		}
+		for _, candidate := range candidates {
 			if candidate >= low && candidate <= high && (candidate-low)%step == 0 {
 				matched = true
 			}

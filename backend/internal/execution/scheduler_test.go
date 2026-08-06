@@ -23,6 +23,9 @@ func TestCronMatchesExactAndWildcardMinutes(t *testing.T) {
 	if !cronMatches("* * * * *", now) {
 		t.Fatal("wildcard schedule did not match")
 	}
+	if !cronMatches("* * * * *", time.Date(2026, time.August, 5, 7, 30, 0, 0, time.UTC)) {
+		t.Fatal("wildcard schedule did not match at 07:00")
+	}
 	if !cronMatches("*/15 9 * * 1-5", now) {
 		t.Fatal("weekday range schedule did not match")
 	}

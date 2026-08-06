@@ -263,6 +263,7 @@ export async function watchExecution(
 export type Execution = {
   id: string;
   workflowId?: string;
+  retryOf?: string;
   status: ExecutionStatus;
   trigger: string;
   error?: string;
@@ -317,11 +318,21 @@ export const executions = {
       .get<ExecutionDetail>(`/api/workspaces/${workspaceId}/executions/${id}`)
       .then((r) => r.data),
 
-  start: (workspaceId: string, workflowId: string, input?: unknown) =>
+  start: (workspaceId: string, workflowId: string, input?: unknown, idempotencyKey = crypto.randomUUID()) =>
     api
       .post<Execution>(
         `/api/workspaces/${workspaceId}/workflows/${workflowId}/executions`,
         input === undefined ? undefined : { input },
+        { headers: { "Idempotency-Key": idempotencyKey } },
+      )
+      .then((r) => r.data),
+
+  retry: (workspaceId: string, executionId: string, idempotencyKey = crypto.randomUUID()) =>
+    api
+      .post<Execution>(
+        `/api/workspaces/${workspaceId}/executions/${executionId}/retry`,
+        undefined,
+        { headers: { "Idempotency-Key": idempotencyKey } },
       )
       .then((r) => r.data),
 };

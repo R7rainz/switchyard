@@ -216,3 +216,11 @@ export function useCancelExecution(workspaceId: string | undefined) {
     onSuccess: () => client.invalidateQueries({ queryKey: keys.executions(workspaceId ?? "") }),
   });
 }
+
+export function useRetryExecution(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (executionId: string) => executions.retry(workspaceId!, executionId),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.executions(workspaceId ?? "") }),
+  });
+}

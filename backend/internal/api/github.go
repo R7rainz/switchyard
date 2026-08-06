@@ -27,7 +27,7 @@ type githubWebhookAPI struct {
 	credentials *credential.Service
 }
 
-// receive accepts signed pull_request deliveries. ponytail: delivery IDs are not persisted; add a table if redelivery duplicates matter.
+// receive accepts signed pull_request deliveries.
 func (a *githubWebhookAPI) receive(w http.ResponseWriter, r *http.Request) {
 	workspaceID, workflowID := chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID")
 	flow, err := a.workflows.Get(r.Context(), workspaceID, workflowID)
@@ -70,12 +70,24 @@ func (a *githubWebhookAPI) receive(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	run, err := a.executions.Start(r.Context(), workspaceID, workflowID, "", execution.TriggerWebhook, body)
+	// GitHub retries deliveries with the same delivery id. Persisting it as the
+	// execution key makes a redelivery return the original run instead of
+	// repeating its side effects.
+	key := githubDeliveryKey(workflowID, r.Header.Get("X-GitHub-Delivery"))
+	run, err := a.executions.StartWithIdempotencyKey(r.Context(), workspaceID, workflowID, "", execution.TriggerWebhook, body, key)
 	if err != nil {
 		writeError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusAccepted, executionViewOf(run))
+}
+
+func githubDeliveryKey(workflowID, deliveryID string) string {
+	deliveryID = strings.TrimSpace(deliveryID)
+	if deliveryID == "" {
+		return ""
+	}
+	return "github:" + workflowID + ":" + deliveryID
 }
 
 func githubTrigger(graph workflow.Graph) *workflow.Node {

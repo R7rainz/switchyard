@@ -1,10 +1,13 @@
 package execution
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
@@ -16,6 +19,17 @@ var (
 
 	// ErrNotRunning means a cancel arrived after the run had already finished.
 	ErrNotRunning = errors.New("execution: already finished")
+
+	// ErrNotRetryable means a retry was requested for a run that is still
+	// active or already succeeded. Retrying success would duplicate side
+	// effects, so recovery is deliberately limited to failed/cancelled runs.
+	ErrNotRetryable = errors.New("execution: run cannot be retried")
+
+	// ErrIdempotencyConflict means a key was reused for a different request.
+	ErrIdempotencyConflict = errors.New("execution: idempotency key was reused")
+
+	// ErrInvalidIdempotencyKey means the caller supplied an oversized key.
+	ErrInvalidIdempotencyKey = errors.New("execution: invalid idempotency key")
 )
 
 // Status is where a run, or one node of it, has got to.
@@ -51,18 +65,20 @@ func (s Status) Done() bool {
 // there is no version table — this snapshot answers the question versioning
 // would have been asked.
 type Execution struct {
-	ID          string
-	WorkspaceID string
-	WorkflowID  string
-	Graph       workflow.Graph
-	Status      Status
-	Trigger     string
-	Input       json.RawMessage
-	Error       string
-	StartedBy   string
-	CreatedAt   time.Time
-	StartedAt   time.Time
-	FinishedAt  time.Time
+	ID             string
+	WorkspaceID    string
+	WorkflowID     string
+	Graph          workflow.Graph
+	Status         Status
+	Trigger        string
+	Input          json.RawMessage
+	Error          string
+	StartedBy      string
+	CreatedAt      time.Time
+	StartedAt      time.Time
+	FinishedAt     time.Time
+	RetryOf        string
+	IdempotencyKey string
 }
 
 // NodeRun is what one node did during one execution.
@@ -83,6 +99,7 @@ type NodeRun struct {
 type Store interface {
 	Create(ctx context.Context, e Execution) error
 	Get(ctx context.Context, workspaceID, id string) (Execution, error)
+	GetByIdempotencyKey(ctx context.Context, workspaceID, key string) (Execution, error)
 
 	// List returns a workspace's executions newest first. An empty workflowID
 	// means all of them.
@@ -180,6 +197,38 @@ func NewService(store Store, workflows Workflows, runners Registry, opts Options
 // external services and can take minutes — far longer than a request should be
 // held open. The caller gets an id and watches it.
 func (s *Service) Start(ctx context.Context, workspaceID, workflowID, userID, trigger string, input json.RawMessage) (Execution, error) {
+	return s.start(ctx, workspaceID, workflowID, userID, trigger, input, "")
+}
+
+// StartWithIdempotencyKey is Start with a caller-owned key. Repeating the same
+// request returns the original row instead of launching another side effect.
+func (s *Service) StartWithIdempotencyKey(ctx context.Context, workspaceID, workflowID, userID, trigger string, input json.RawMessage, key string) (Execution, error) {
+	return s.start(ctx, workspaceID, workflowID, userID, trigger, input, key)
+}
+
+func (s *Service) start(ctx context.Context, workspaceID, workflowID, userID, trigger string, input json.RawMessage, key string) (Execution, error) {
+	key, err := normalizeIdempotencyKey(key)
+	if err != nil {
+		return Execution{}, err
+	}
+	if trigger == "" {
+		trigger = TriggerManual
+	}
+	// Resolve an existing key before loading the workflow. A client retry after
+	// a workflow was deleted must still receive the original accepted run.
+	if key != "" {
+		existing, lookupErr := s.store.GetByIdempotencyKey(ctx, workspaceID, key)
+		if lookupErr == nil {
+			candidate := Execution{WorkspaceID: workspaceID, WorkflowID: workflowID, Trigger: trigger, Input: input, StartedBy: userID}
+			if sameRequest(existing, candidate) {
+				return existing, nil
+			}
+			return Execution{}, ErrIdempotencyConflict
+		}
+		if !errors.Is(lookupErr, ErrNotFound) {
+			return Execution{}, lookupErr
+		}
+	}
 	wf, err := s.workflows.Get(ctx, workspaceID, workflowID)
 	if err != nil {
 		return Execution{}, err
@@ -191,28 +240,112 @@ func (s *Service) Start(ctx context.Context, workspaceID, workflowID, userID, tr
 	if err := wf.Graph.Runnable(); err != nil {
 		return Execution{}, err
 	}
-	if trigger == "" {
-		trigger = TriggerManual
-	}
-
 	now := s.now()
 	run := Execution{
-		ID:          s.newID(),
-		WorkspaceID: workspaceID,
-		WorkflowID:  wf.ID,
-		Graph:       wf.Graph,
-		Status:      StatusPending,
-		Trigger:     trigger,
-		Input:       input,
-		StartedBy:   userID,
-		CreatedAt:   now,
+		ID:             s.newID(),
+		WorkspaceID:    workspaceID,
+		WorkflowID:     wf.ID,
+		Graph:          wf.Graph,
+		Status:         StatusPending,
+		Trigger:        trigger,
+		Input:          input,
+		StartedBy:      userID,
+		CreatedAt:      now,
+		IdempotencyKey: key,
 	}
+	return s.persistAndLaunch(ctx, run)
+}
+
+// Retry starts a new execution from a failed or cancelled run's immutable
+// snapshot. It does not consult the current workflow: recovery should still
+// work after the workflow was edited or deleted.
+func (s *Service) Retry(ctx context.Context, workspaceID, id, userID, key string) (Execution, error) {
+	key, err := normalizeIdempotencyKey(key)
+	if err != nil {
+		return Execution{}, err
+	}
+	original, err := s.store.Get(ctx, workspaceID, id)
+	if err != nil {
+		return Execution{}, err
+	}
+	if original.Status != StatusFailed && original.Status != StatusCancelled {
+		return Execution{}, ErrNotRetryable
+	}
+	if err := original.Graph.Runnable(); err != nil {
+		return Execution{}, fmt.Errorf("execution: retry snapshot is not runnable: %w", err)
+	}
+
+	run := Execution{
+		ID:             s.newID(),
+		WorkspaceID:    workspaceID,
+		WorkflowID:     original.WorkflowID,
+		Graph:          original.Graph,
+		Status:         StatusPending,
+		Trigger:        TriggerRetry,
+		Input:          original.Input,
+		StartedBy:      userID,
+		CreatedAt:      s.now(),
+		RetryOf:        original.ID,
+		IdempotencyKey: key,
+	}
+	return s.persistAndLaunch(ctx, run)
+}
+
+func (s *Service) persistAndLaunch(ctx context.Context, run Execution) (Execution, error) {
+	if run.IdempotencyKey != "" {
+		existing, err := s.store.GetByIdempotencyKey(ctx, run.WorkspaceID, run.IdempotencyKey)
+		switch {
+		case err == nil:
+			if sameRequest(existing, run) {
+				return existing, nil
+			}
+			return Execution{}, ErrIdempotencyConflict
+		case !errors.Is(err, ErrNotFound):
+			return Execution{}, err
+		}
+	}
+
 	if err := s.store.Create(ctx, run); err != nil {
+		// The database unique index wins a race between two first requests. Read
+		// the winner and apply the same request comparison as the fast path.
+		if run.IdempotencyKey != "" {
+			if existing, lookupErr := s.store.GetByIdempotencyKey(ctx, run.WorkspaceID, run.IdempotencyKey); lookupErr == nil {
+				if sameRequest(existing, run) {
+					return existing, nil
+				}
+				return Execution{}, ErrIdempotencyConflict
+			}
+		}
 		return Execution{}, err
 	}
 
 	s.launch(ctx, run)
 	return run, nil
+}
+
+func normalizeIdempotencyKey(key string) (string, error) {
+	key = strings.TrimSpace(key)
+	if len(key) > 200 {
+		return "", ErrInvalidIdempotencyKey
+	}
+	return key, nil
+}
+
+func sameRequest(a, b Execution) bool {
+	return a.WorkspaceID == b.WorkspaceID && a.WorkflowID == b.WorkflowID &&
+		a.RetryOf == b.RetryOf && a.Trigger == b.Trigger && a.StartedBy == b.StartedBy &&
+		bytes.Equal(compactInput(a.Input), compactInput(b.Input))
+}
+
+func compactInput(input json.RawMessage) []byte {
+	if len(input) == 0 {
+		return nil
+	}
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, input); err != nil {
+		return input
+	}
+	return compact.Bytes()
 }
 
 // Get returns one execution together with what each node did.

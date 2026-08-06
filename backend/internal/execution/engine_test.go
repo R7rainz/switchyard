@@ -189,6 +189,71 @@ func TestExecutionKeepsTheGraphItRan(t *testing.T) {
 	}
 }
 
+func TestRetryRecoversFailedRunAndIsIdempotent(t *testing.T) {
+	graph := workflow.Graph{
+		Nodes: []workflow.Node{node("t", "trigger.manual", ""), node("a", "http.request", "")},
+		Edges: []workflow.Edge{edge("e1", "t", "a")},
+	}
+	svc, store, rec := harness(t, graph)
+	rec.fail["a"] = errors.New("upstream unavailable")
+
+	failed, err := svc.Start(context.Background(), wsA, "wf-1", user, "", nil)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if got := await(t, store, wsA, failed.ID); got.Status != StatusFailed {
+		t.Fatalf("original status = %s, want FAILED", got.Status)
+	}
+
+	// The retry uses the stored snapshot and can run after the current workflow
+	// has changed. The runner is repaired before retrying, as a real operator
+	// would repair the upstream service.
+	rec.mu.Lock()
+	delete(rec.fail, "a")
+	rec.mu.Unlock()
+	svc.workflows = stubWorkflows{err: ErrNotFound}
+	retried, err := svc.Retry(context.Background(), wsA, failed.ID, user, "retry-1")
+	if err != nil {
+		t.Fatalf("Retry: %v", err)
+	}
+	if retried.RetryOf != failed.ID {
+		t.Fatalf("retryOf = %q, want %q", retried.RetryOf, failed.ID)
+	}
+	duplicate, err := svc.Retry(context.Background(), wsA, failed.ID, user, "retry-1")
+	if err != nil {
+		t.Fatalf("duplicate Retry: %v", err)
+	}
+	if duplicate.ID != retried.ID {
+		t.Fatalf("duplicate retry created %q, want %q", duplicate.ID, retried.ID)
+	}
+	if got := await(t, store, wsA, retried.ID); got.Status != StatusSucceeded {
+		t.Fatalf("retry status = %s, want SUCCEEDED", got.Status)
+	}
+
+	if _, err := svc.Retry(context.Background(), wsA, retried.ID, user, "retry-2"); !errors.Is(err, ErrNotRetryable) {
+		t.Fatalf("retrying success: got %v, want ErrNotRetryable", err)
+	}
+}
+
+func TestStartWithIdempotencyKeyReturnsExistingRun(t *testing.T) {
+	svc, store, _ := harness(t, workflow.Graph{Nodes: []workflow.Node{node("t", "trigger.manual", "")}})
+	first, err := svc.StartWithIdempotencyKey(context.Background(), wsA, "wf-1", user, TriggerManual, nil, "start-1")
+	if err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	second, err := svc.StartWithIdempotencyKey(context.Background(), wsA, "wf-1", user, TriggerManual, nil, "start-1")
+	if err != nil {
+		t.Fatalf("duplicate Start: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("duplicate start created %q, want %q", second.ID, first.ID)
+	}
+	if _, err := svc.StartWithIdempotencyKey(context.Background(), wsA, "wf-other", user, TriggerManual, nil, "start-1"); !errors.Is(err, ErrIdempotencyConflict) {
+		t.Fatalf("key reuse: got %v, want ErrIdempotencyConflict", err)
+	}
+	await(t, store, wsA, first.ID)
+}
+
 // A condition sends the run one way, and the other branch is recorded SKIPPED
 // rather than left looking pending.
 func TestBranchingSkipsTheUntakenPath(t *testing.T) {

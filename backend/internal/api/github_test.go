@@ -16,3 +16,17 @@ func TestGitHubSignatureValidation(t *testing.T) {
 		t.Fatal("invalid GitHub signature was accepted")
 	}
 }
+
+func TestGitHubDeliveryKeyIsWorkflowScoped(t *testing.T) {
+	first := githubDeliveryKey("workflow-a", "delivery-1")
+	second := githubDeliveryKey("workflow-b", "delivery-1")
+	if first == second {
+		t.Fatalf("delivery keys collided across workflows: %q", first)
+	}
+	if got := githubDeliveryKey("workflow-a", "  delivery-1 "); got != first {
+		t.Fatalf("delivery key did not normalize whitespace: %q", got)
+	}
+	if got := githubDeliveryKey("workflow-a", ""); got != "" {
+		t.Fatalf("missing delivery id = %q, want no idempotency key", got)
+	}
+}
