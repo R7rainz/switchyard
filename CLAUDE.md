@@ -466,7 +466,7 @@ would replace "duplicate node id" with "Request failed with status code 400".
 
 **`internal/execution` is the engine.** It walks a graph, runs each node,
 records what happened, and knows nothing about HTTP. `0006` adds `execution`
-and `execution_node`.
+and `execution_node`; `0008` adds retry lineage and durable idempotency keys.
 
 **Starting is asynchronous.** A workflow calls external services and can take
 minutes, so `POST .../executions` answers **202** with an id and the caller
@@ -532,10 +532,22 @@ that.
 limiting: one binary is the whole deployment. A cancel for a run this process
 has never heard of finishes the row instead.
 
+**Retry is explicit recovery, not automatic node replay.** Only FAILED and
+CANCELLED runs can be retried, and the new run carries the original graph
+snapshot, input, and a `retryOf` link. Automatic retries stay out of the engine
+because repeating an external side effect without a node-level idempotency
+contract can make the failure worse.
+
+**Idempotency keys are durable and workspace-scoped.** Start and retry accept
+`Idempotency-Key`; the same key and request return the original run, while a
+different request gets a conflict. GitHub delivery ids and scheduler slots use
+the same mechanism, so redelivery or a restart cannot duplicate a run.
+
 Routes: `POST .../workflows/{workflowID}/executions` and
-`POST .../executions/{id}/cancel` need `execution:run` (MEMBER); listing and
-reading need `execution:read` (VIEWER) — a viewer may watch what happened, and
-it takes a member to make something happen.
+`POST .../executions/{id}/cancel` and `POST .../executions/{id}/retry` need
+`execution:run` (MEMBER); listing and reading need `execution:read` (VIEWER) —
+a viewer may watch what happened, and it takes a member to make something
+happen.
 
 **`execution` imports `workflow`.** That arrow is not in AGENT.md's list and is
 correct: a workflow is data and the engine consumes it. `workflow` imports
