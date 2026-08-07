@@ -123,6 +123,13 @@ type Store interface {
 	Reclaim(ctx context.Context, message string) (int, error)
 }
 
+// transitionFinisher is implemented by durable stores that can report whether
+// a terminal transition actually won the race with cancellation. Finish stays
+// on Store for compatibility with small test stores.
+type transitionFinisher interface {
+	finishIfRunning(ctx context.Context, id string, status Status, message string, at time.Time) (bool, error)
+}
+
 // Workflows is the part of the workflow package this one needs. Declared here
 // so the engine can be tested without a workflow store.
 type Workflows interface {

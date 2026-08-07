@@ -104,6 +104,7 @@ func NewRouter(deps Deps) http.Handler {
 	router.Post("/hooks/github/{workflowID}", githubHooks.receivePublic)
 	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 	router.Post("/api/v1/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
+	router.Post("/api/v1/hooks/webhook/{workflowID}", genericHooks.receive)
 	router.Post("/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
 	router.Get("/api/v1/oauth/callback/{provider}", oauthHandlers.callback)
 

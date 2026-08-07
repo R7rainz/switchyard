@@ -154,7 +154,7 @@ func DefaultModelFor(provider string) string {
 	case ProviderAnthropic:
 		return "claude-sonnet-5"
 	case ProviderGemini:
-		return "gemini-2.0-flash"
+		return "gemini-3.6-flash"
 	default:
 		return DefaultModel
 	}

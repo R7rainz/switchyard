@@ -131,6 +131,18 @@ func (s *PostgresStore) Finish(ctx context.Context, id string, status Status, me
 	return nil
 }
 
+func (s *PostgresStore) finishIfRunning(ctx context.Context, id string, status Status, message string, at time.Time) (bool, error) {
+	tag, err := s.pool.Exec(ctx,
+		`update "execution"
+		 set "status" = $2, "error" = $3, "finishedAt" = $4
+		 where "id" = $1 and "status" in ('PENDING', 'RUNNING')`,
+		id, string(status), nullString(message), at)
+	if err != nil {
+		return false, fmt.Errorf("execution: finishing: %w", err)
+	}
+	return tag.RowsAffected() > 0, nil
+}
+
 func (s *PostgresStore) SaveNodeRun(ctx context.Context, row NodeRun) error {
 	_, err := s.pool.Exec(ctx,
 		`insert into "execution_node"

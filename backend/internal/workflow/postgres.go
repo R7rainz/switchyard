@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -39,6 +40,28 @@ func (s *PostgresStore) Create(ctx context.Context, w Workflow) error {
 	return nil
 }
 
+func (s *PostgresStore) CreateWithVersion(ctx context.Context, w Workflow, version Version) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("workflow: beginning create transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	graph, err := json.Marshal(w.Graph)
+	if err != nil {
+		return fmt.Errorf("workflow: encoding graph: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `insert into "workflow" ("id", "workspaceId", "name", "description", "graph", "createdBy", "createdAt", "updatedAt") values ($1, $2, $3, $4, $5, $6, $7, $8)`, w.ID, w.WorkspaceID, w.Name, w.Description, graph, nullString(w.CreatedBy), w.CreatedAt, w.UpdatedAt); err != nil {
+		return fmt.Errorf("workflow: creating: %w", err)
+	}
+	if err = insertVersion(ctx, tx, version); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow: committing create: %w", err)
+	}
+	return nil
+}
+
 // Get filters on the workspace as well as the id. The id alone would be enough
 // to find the row, which is the danger: permission was checked against the
 // workspace in the URL, so dropping this predicate would serve one workspace's
@@ -54,6 +77,18 @@ func (s *PostgresStore) Get(ctx context.Context, workspaceID, id string) (Workfl
 	}
 	if err != nil {
 		return Workflow{}, fmt.Errorf("workflow: loading: %w", err)
+	}
+	return w, nil
+}
+
+func (s *PostgresStore) GetByID(ctx context.Context, id string) (Workflow, error) {
+	row := s.pool.QueryRow(ctx, workflowColumns+` where "id" = $1`, id)
+	w, err := scanWorkflow(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Workflow{}, ErrNotFound
+	}
+	if err != nil {
+		return Workflow{}, fmt.Errorf("workflow: loading public workflow: %w", err)
 	}
 	return w, nil
 }
@@ -118,6 +153,37 @@ func (s *PostgresStore) Update(ctx context.Context, w Workflow) error {
 	return nil
 }
 
+func (s *PostgresStore) UpdateWithVersion(ctx context.Context, w Workflow, version Version) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("workflow: beginning update transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err = tx.Exec(ctx, `select "id" from "workflow" where "workspaceId" = $1 and "id" = $2 for update`, w.WorkspaceID, w.ID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("workflow: locking: %w", err)
+	}
+	graph, err := json.Marshal(w.Graph)
+	if err != nil {
+		return fmt.Errorf("workflow: encoding graph: %w", err)
+	}
+	if _, err = tx.Exec(ctx, `update "workflow" set "name" = $3, "description" = $4, "graph" = $5, "updatedAt" = $6 where "workspaceId" = $1 and "id" = $2`, w.WorkspaceID, w.ID, w.Name, w.Description, graph, w.UpdatedAt); err != nil {
+		return fmt.Errorf("workflow: updating: %w", err)
+	}
+	if err = tx.QueryRow(ctx, `select coalesce(max("number"), 0) + 1 from "workflow_version" where "workspaceId" = $1 and "workflowId" = $2`, w.WorkspaceID, w.ID).Scan(&version.Number); err != nil {
+		return fmt.Errorf("workflow: allocating version: %w", err)
+	}
+	if err = insertVersion(ctx, tx, version); err != nil {
+		return err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("workflow: committing update: %w", err)
+	}
+	return nil
+}
+
 func (s *PostgresStore) Delete(ctx context.Context, workspaceID, id string) error {
 	tag, err := s.pool.Exec(ctx,
 		`delete from "workflow" where "workspaceId" = $1 and "id" = $2`,
@@ -134,11 +200,19 @@ func (s *PostgresStore) Delete(ctx context.Context, workspaceID, id string) erro
 }
 
 func (s *PostgresStore) CreateVersion(ctx context.Context, version Version) error {
+	return insertVersion(ctx, s.pool, version)
+}
+
+type queryExecer interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertVersion(ctx context.Context, execer queryExecer, version Version) error {
 	graph, err := json.Marshal(version.Graph)
 	if err != nil {
 		return fmt.Errorf("workflow: encoding version graph: %w", err)
 	}
-	_, err = s.pool.Exec(ctx,
+	_, err = execer.Exec(ctx,
 		`insert into "workflow_version"
 		   ("id", "workspaceId", "workflowId", "number", "name", "description", "graph", "createdBy", "createdAt")
 		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
