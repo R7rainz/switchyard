@@ -36,6 +36,20 @@ func TestLoadDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadUsesRenderPortWhenAddressIsUnset(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SWITCHYARD_ADDR", "")
+	t.Setenv("PORT", "10000")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Addr != ":10000" {
+		t.Fatalf("Addr = %q, want :10000", cfg.Addr)
+	}
+}
+
 func TestLoadReadsEnvironment(t *testing.T) {
 	setRequired(t)
 	t.Setenv("SWITCHYARD_ADDR", ":9000")

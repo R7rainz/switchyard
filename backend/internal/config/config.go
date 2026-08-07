@@ -84,7 +84,7 @@ func Load() (Config, error) {
 	}
 
 	cfg := Config{
-		Addr:         envOr("SWITCHYARD_ADDR", ":8090"),
+		Addr:         listenAddr(),
 		AuthIssuer:   envOr("SWITCHYARD_AUTH_ISSUER", "http://localhost:3007"),
 		AuthAudience: envOr("SWITCHYARD_AUTH_AUDIENCE", "switchyard-backend"),
 		DatabaseURL:  os.Getenv("DATABASE_URL"),
@@ -147,6 +147,18 @@ func Load() (Config, error) {
 	}
 
 	return cfg, nil
+}
+
+func listenAddr() string {
+	if addr := os.Getenv("SWITCHYARD_ADDR"); addr != "" {
+		return addr
+	}
+	if port := os.Getenv("PORT"); port != "" {
+		if number, err := strconv.Atoi(port); err == nil && number > 0 && number <= 65535 {
+			return ":" + port
+		}
+	}
+	return ":8090"
 }
 
 const (
