@@ -13,6 +13,7 @@ import { Button, Eyebrow, Skeleton, Wordmark, cx } from "./ui";
 const links = [
   { href: "/workflows", label: "Workflows" },
   { href: "/runs", label: "Runs" },
+  { href: "/docs", label: "Docs" },
   { href: "/settings", label: "Settings" },
 ];
 
