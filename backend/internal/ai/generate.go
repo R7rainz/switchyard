@@ -206,6 +206,16 @@ func parseGenerated(text string) (Generated, error) {
 	if err := json.Unmarshal([]byte(stripFence(text)), &generated); err != nil {
 		return Generated{}, fmt.Errorf("%w: %v", ErrBadGraph, err)
 	}
+	// Non-strict providers may omit an empty array or encode it as null. The
+	// API contract is still an array: the frontend maps edges while rendering
+	// the proposal, so normalize both graph collections before validation and
+	// marshaling rather than turning a valid single-node draft into a crash.
+	if generated.Graph.Nodes == nil {
+		generated.Graph.Nodes = []workflow.Node{}
+	}
+	if generated.Graph.Edges == nil {
+		generated.Graph.Edges = []workflow.Edge{}
+	}
 	if err := generated.Graph.Validate(); err != nil {
 		return Generated{}, fmt.Errorf("%w: %v", ErrBadGraph, err)
 	}

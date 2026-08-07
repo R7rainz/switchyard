@@ -102,6 +102,19 @@ func TestUnpositionedNodesAreLaidOut(t *testing.T) {
 	}
 }
 
+func TestGeneratedGraphNormalizesMissingEdges(t *testing.T) {
+	missing := `{"name":"manual","graph":{"nodes":[{"id":"t","type":"trigger.manual"}]}}`
+	provider := &stubProvider{replies: []string{missing}}
+
+	generated, err := NewService(provider, stubCreds{key: "k"}).GenerateWorkflow(t.Context(), "ws", "start manually")
+	if err != nil {
+		t.Fatalf("GenerateWorkflow: %v", err)
+	}
+	if generated.Graph.Edges == nil {
+		t.Fatal("generated edges are nil, want an empty array")
+	}
+}
+
 // Positions the model did give are left alone.
 func TestGivenPositionsAreKept(t *testing.T) {
 	provider := &stubProvider{replies: []string{goodGraph}}
