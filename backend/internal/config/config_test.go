@@ -66,6 +66,9 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	if cfg.AuthAudience != "other-backend" {
 		t.Errorf("AuthAudience = %q", cfg.AuthAudience)
 	}
+	if got, want := cfg.AuthIssuer, "https://switchyard.example"; got != want {
+		t.Errorf("AuthIssuer = %q, want %q", got, want)
+	}
 	// The trailing slash on the issuer must not produce a doubled one here.
 	if got, want := cfg.AuthJWKSURL(), "https://switchyard.example/api/auth/jwks"; got != want {
 		t.Errorf("AuthJWKSURL() = %q, want %q", got, want)

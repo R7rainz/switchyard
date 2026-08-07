@@ -136,9 +136,13 @@ func Load() (Config, error) {
 	// A relative or malformed issuer would make every token comparison fail in
 	// a way that looks like a bad token, so reject it at startup instead.
 	parsed, err := url.Parse(cfg.AuthIssuer)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil ||
+		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return Config{}, fmt.Errorf("config: SWITCHYARD_AUTH_ISSUER %q is not an absolute URL", cfg.AuthIssuer)
 	}
+	// Browser Origin values never carry a trailing slash. Keep the issuer,
+	// CORS allow-list, and frontend JWT issuer in the same canonical form.
+	cfg.AuthIssuer = parsed.Scheme + "://" + parsed.Host
 	if cfg.AuthAudience == "" {
 		return Config{}, fmt.Errorf("config: SWITCHYARD_AUTH_AUDIENCE must not be empty")
 	}
