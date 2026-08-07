@@ -15,12 +15,16 @@ import (
 	"github.com/R7rainz/switchyard/backend/internal/ai"
 	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
 	"github.com/R7rainz/switchyard/backend/internal/api"
+	"github.com/R7rainz/switchyard/backend/internal/artifact"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/config"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/database"
+	"github.com/R7rainz/switchyard/backend/internal/discord"
+	"github.com/R7rainz/switchyard/backend/internal/email"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
 	"github.com/R7rainz/switchyard/backend/internal/github"
+	"github.com/R7rainz/switchyard/backend/internal/oauth"
 	"github.com/R7rainz/switchyard/backend/internal/slack"
 	"github.com/R7rainz/switchyard/backend/internal/websocket"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
@@ -87,6 +91,18 @@ func main() {
 	workspaces := workspace.NewService(workspaceStore)
 	credentials := credential.NewService(credential.NewPostgresStore(pool), keyring)
 	workflows := workflow.NewService(workflow.NewPostgresStore(pool))
+	oauthProviders := make(map[string]oauth.ProviderConfig, len(cfg.OAuthProviders))
+	for name, provider := range cfg.OAuthProviders {
+		oauthProviders[name] = oauth.ProviderConfig{
+			ClientID: provider.ClientID, ClientSecret: provider.ClientSecret,
+			AuthURL: provider.AuthURL, TokenURL: provider.TokenURL, Scope: provider.Scope,
+		}
+	}
+	oauthService := oauth.NewService(oauthProviders, cfg.OAuthStateKey, credentials)
+	artifacts, err := artifact.NewLocalStore(cfg.ArtifactDir)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("artifact storage unavailable")
+	}
 	feedback := aifeedback.NewService(aifeedback.NewPostgresStore(pool))
 
 	// Providers are process-wide and hold no key: a workspace's selected key is
@@ -105,6 +121,8 @@ func main() {
 	runners.Add(ai.Runners(assistant))
 	runners.Add(github.Runners(credentials, nil))
 	runners.Add(slack.Runners(credentials, nil))
+	runners.Add(discord.Runners(credentials, nil))
+	runners.Add(email.Runners(credentials))
 
 	// The hub is handed to the engine as a Publisher and to the router as an
 	// EventStream. Neither package imports the other — the engine announces
@@ -133,16 +151,19 @@ func main() {
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: api.NewRouter(api.Deps{
-			Verifier:    verifier,
-			Logger:      logger,
-			Workspaces:  workspaces,
-			Credentials: credentials,
-			Workflows:   workflows,
-			Executions:  executions,
-			AI:          assistant,
-			Feedback:    feedback,
-			Events:      events,
-			AppURL:      cfg.AuthIssuer,
+			Verifier:         verifier,
+			Logger:           logger,
+			Workspaces:       workspaces,
+			Credentials:      credentials,
+			Workflows:        workflows,
+			Executions:       executions,
+			AI:               assistant,
+			Feedback:         feedback,
+			OAuth:            oauthService,
+			OAuthCallbackURL: cfg.OAuthCallbackURL,
+			Artifacts:        artifacts,
+			Events:           events,
+			AppURL:           cfg.AuthIssuer,
 		}),
 		// Bound how long a connection can sit half-open holding a slot.
 		ReadHeaderTimeout: 10 * time.Second,

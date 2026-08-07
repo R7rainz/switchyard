@@ -230,10 +230,59 @@ export const nodeSpecs: NodeSpec[] = [
     ],
   },
   {
+    type: "github.issue",
+    label: "Create GitHub issue",
+    summary: "Creates an issue in a repository.",
+    fields: [
+      { key: "owner", label: "Owner", kind: "text", placeholder: "{{ .trigger.repository.owner.login }}", hint: templateHint },
+      { key: "repo", label: "Repository", kind: "text", placeholder: "{{ .trigger.repository.name }}", hint: templateHint },
+      { key: "title", label: "Title", kind: "text", placeholder: "Follow-up from PR #{{ .trigger.number }}" },
+      { key: "body", label: "Body", kind: "textarea", placeholder: "{{ .nodes.summary.text }}", hint: templateHint },
+    ],
+  },
+  {
+    type: "github.comment",
+    label: "Comment on GitHub issue",
+    summary: "Adds a comment to an issue or pull request.",
+    fields: [
+      { key: "owner", label: "Owner", kind: "text", placeholder: "{{ .trigger.repository.owner.login }}", hint: templateHint },
+      { key: "repo", label: "Repository", kind: "text", placeholder: "{{ .trigger.repository.name }}", hint: templateHint },
+      { key: "number", label: "Issue or PR", kind: "text", placeholder: "{{ .trigger.number }}", hint: templateHint },
+      { key: "body", label: "Comment", kind: "textarea", placeholder: "{{ .nodes.summary.text }}", hint: templateHint },
+    ],
+  },
+  {
+    type: "github.merge",
+    label: "Merge pull request",
+    summary: "Merges a pull request with the selected method.",
+    fields: [
+      { key: "owner", label: "Owner", kind: "text", placeholder: "{{ .trigger.repository.owner.login }}", hint: templateHint },
+      { key: "repo", label: "Repository", kind: "text", placeholder: "{{ .trigger.repository.name }}", hint: templateHint },
+      { key: "number", label: "Pull request", kind: "text", placeholder: "{{ .trigger.number }}", hint: templateHint },
+      { key: "method", label: "Method", kind: "select", options: ["merge", "squash", "rebase"] },
+    ],
+  },
+  {
     type: "slack.message",
     label: "Send Slack message",
     summary: "Posts a message through the workspace incoming webhook.",
     fields: [{ key: "text", label: "Message", kind: "textarea", placeholder: "PR #{{ .nodes.pr.number }}: {{ .nodes.summary.text }}", hint: templateHint }],
+  },
+  {
+    type: "discord.message",
+    label: "Send Discord message",
+    summary: "Posts a message through the workspace Discord webhook.",
+    fields: [{ key: "text", label: "Message", kind: "textarea", placeholder: "{{ .nodes.summary.text }}", hint: templateHint }],
+  },
+  {
+    type: "email.message",
+    label: "Send email",
+    summary: "Sends an email through the workspace SMTP credential.",
+    fields: [
+      { key: "to", label: "To", kind: "text", placeholder: "oncall@example.com" },
+      { key: "subject", label: "Subject", kind: "text", placeholder: "Workflow update" },
+      { key: "text", label: "Message", kind: "textarea", placeholder: "{{ .nodes.summary.text }}", hint: templateHint },
+    ],
   },
 ];
 

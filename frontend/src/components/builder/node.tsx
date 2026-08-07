@@ -122,6 +122,11 @@ export const nodeTypes = Object.fromEntries(
     "ai.classification",
     "ai.decision",
     "github.pull_request",
+    "github.issue",
+    "github.comment",
+    "github.merge",
     "slack.message",
+    "discord.message",
+    "email.message",
   ].map((type) => [type, BuilderNode]),
 );

@@ -95,6 +95,7 @@ var categories = map[string]bool{
 	"github":   true,
 	"slack":    true,
 	"discord":  true,
+	"email":    true,
 	"variable": true,
 }
 

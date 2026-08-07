@@ -20,6 +20,7 @@ export const categories = {
   github: { label: "GitHub", tone: "violet", hex: "#e2ddfd" },
   slack: { label: "Slack", tone: "pink", hex: "#ffd7f0" },
   discord: { label: "Discord", tone: "violet", hex: "#e2ddfd" },
+  email: { label: "Email", tone: "pink", hex: "#ffd7f0" },
 } as const satisfies Record<string, { label: string; tone: Pastel; hex: string }>;
 
 export type Category = keyof typeof categories;

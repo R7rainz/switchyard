@@ -74,7 +74,12 @@ Node types:
 - ai.decision       {"label", "provider", "question", "context"} returns {"decision", "reasoning"} and branches true/false.
                     Provider is optional and can be openrouter, openai, anthropic, or gemini.
 - github.pull_request {"label", "owner", "repo", "number"} returns PR title, body, author, branches, and URL.
+- github.issue     {"label", "owner", "repo", "title", "body"} creates an issue.
+- github.comment   {"label", "owner", "repo", "number", "body"} comments on an issue or PR.
+- github.merge     {"label", "owner", "repo", "number", "method"} merges a pull request.
 - slack.message     {"label", "text"}              posts text to the workspace Slack webhook.
+- discord.message  {"label", "text"}              posts text to the workspace Discord webhook.
+- email.message    {"label", "to", "subject", "text"} sends through workspace SMTP.
 
 Refer to earlier nodes with Go template syntax inside a string:
   {{ .nodes.<id>.<field> }} for a node's output, {{ .trigger.<field> }} for the payload.

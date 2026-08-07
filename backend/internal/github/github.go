@@ -29,11 +29,13 @@ func Runners(credentials Credentials, client *http.Client) execution.Registry {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return execution.Registry{"github.pull_request": &pullRequestRunner{
-		credentials: credentials,
-		client:      client,
-		baseURL:     "https://api.github.com",
-	}}
+	baseURL := "https://api.github.com"
+	return execution.Registry{
+		"github.pull_request": &pullRequestRunner{credentials: credentials, client: client, baseURL: baseURL},
+		"github.issue":        &issueRunner{githubAction{credentials: credentials, client: client, baseURL: baseURL}},
+		"github.comment":      &commentRunner{githubAction{credentials: credentials, client: client, baseURL: baseURL}},
+		"github.merge":        &mergeRunner{githubAction{credentials: credentials, client: client, baseURL: baseURL}},
+	}
 }
 
 type pullRequestRunner struct {
