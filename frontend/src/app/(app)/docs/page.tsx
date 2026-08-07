@@ -11,7 +11,7 @@ import {
   ErrorNote,
   Eyebrow,
 } from "@/components/ui";
-import { apiError, type Graph } from "@/lib/api";
+import { apiError, githubWebhookURL, type Graph } from "@/lib/api";
 import { useCreateWorkflow, useWorkspace } from "@/lib/queries";
 
 const githubTestGraph: Graph = {
@@ -63,7 +63,7 @@ export default function DocsPage() {
           <h2 className="mt-3 text-subheading text-ink">Create a known-good test workflow</h2>
           <p className="mt-2 text-body-sm leading-relaxed text-ash">
             This creates a GitHub pull-request trigger with the correct payload references. Open
-            the workflow after creation to copy its IDs into the repository webhook URL.
+            the workflow after creation and use its Copy webhook URL button.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button disabled={!workspace || create.isPending} onClick={createTestWorkflow}>
@@ -96,7 +96,7 @@ export default function DocsPage() {
             In GitHub, open Repository Settings → Webhooks → Add webhook. Use the Render backend,
             not the Vercel frontend:
           </p>
-          <CodeBlock>https://YOUR-RENDER-URL/api/v1/hooks/github/WORKSPACE_ID/WORKFLOW_ID</CodeBlock>
+          <CodeBlock>{githubWebhookURL("WORKFLOW_ID")}</CodeBlock>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-body-sm text-ash">
             <li>Set content type to <code>application/json</code>.</li>
             <li>Use the same value saved as <code>github/webhook</code>.</li>

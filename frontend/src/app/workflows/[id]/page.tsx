@@ -17,7 +17,7 @@ import "@xyflow/react/dist/style.css";
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, History, Play } from "lucide-react";
+import { ArrowLeft, Copy, History, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { nodeTypes } from "@/components/builder/node";
@@ -28,6 +28,7 @@ import { Modal } from "@/components/modal";
 import { Button, ErrorNote, Skeleton, Wordmark } from "@/components/ui";
 import {
   apiError,
+  githubWebhookURL,
   workflows,
   type Graph,
   type Workflow as WorkflowRecord,
@@ -109,6 +110,7 @@ function Builder({
   const [watchingId, setWatchingId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
+  const [webhookCopied, setWebhookCopied] = useState(false);
   const runId = watchingId ?? (lastRun && lastRun.status === "RUNNING" ? lastRun.id : null);
 
   const addNode = useCallback(
@@ -165,6 +167,23 @@ function Builder({
 
         <SaveState saving={saving} error={saveError} dirty={dirty} />
         {lastRun && <RunStatus status={lastRun.status} />}
+
+        {githubTriggered && (
+          <Button
+            variant="neutral"
+            className="h-9"
+            title={githubWebhookURL(id)}
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(githubWebhookURL(id))
+                .then(() => setWebhookCopied(true))
+                .catch(() => setWebhookCopied(false));
+            }}
+          >
+            <Copy size={14} strokeWidth={1.75} />
+            <span className="hidden sm:inline">{webhookCopied ? "Copied" : "Copy webhook URL"}</span>
+          </Button>
+        )}
 
         <Button variant="neutral" className="h-9" onClick={() => setShowHistory(true)}>
           <History size={14} strokeWidth={1.75} />

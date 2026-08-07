@@ -11,6 +11,11 @@ import { getToken } from "./auth-client";
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8090";
 export const API_PATH = "/api/v1";
 
+/** The short public URL users paste into GitHub for a workflow hook. */
+export function githubWebhookURL(workflowId: string) {
+  return `${API_URL.replace(/\/$/, "")}${API_PATH}/hooks/github/${workflowId}`;
+}
+
 /**
  * The client every call to the Go backend goes through.
  *
