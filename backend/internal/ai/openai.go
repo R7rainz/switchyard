@@ -18,6 +18,17 @@ func NewOpenAI(client *http.Client) *OpenAI {
 }
 
 func (o *OpenAI) Complete(ctx context.Context, key string, req Request) (Response, error) {
+	// OpenAI's strict structured-output subset requires every object in the
+	// schema to close additional properties. Workflow node data is deliberately
+	// extensible because each node owns its configuration, so keep the schema
+	// guidance but use OpenAI's non-strict JSON Schema mode for workflow drafts.
+	// The smaller node result schemas remain strict. parseGenerated still
+	// validates the returned graph before it reaches the caller.
+	if req.JSONSchema != nil && req.JSONSchema.Name == "switchyard_workflow" {
+		schema := *req.JSONSchema
+		schema.Strict = false
+		req.JSONSchema = &schema
+	}
 	return completeChatCompletions(ctx, o.client, o.baseURL+"/chat/completions", map[string]string{
 		"Authorization": "Bearer " + key,
 	}, req, false, "max_completion_tokens")

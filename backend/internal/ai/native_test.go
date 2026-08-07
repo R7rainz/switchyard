@@ -39,6 +39,33 @@ func TestOpenAIUsesChatCompletions(t *testing.T) {
 	}
 }
 
+func TestOpenAIAcceptsExtensibleWorkflowSchema(t *testing.T) {
+	var body map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = w.Write([]byte("{\"model\":\"gpt-test\",\"choices\":[{\"message\":{\"content\":\"{}\"}}]}"))
+	}))
+	defer server.Close()
+
+	client := &OpenAI{client: server.Client(), baseURL: server.URL}
+	_, err := client.Complete(t.Context(), "sk-openai", Request{
+		Model: "gpt-test", Prompt: "hi",
+		JSONSchema: &JSONSchema{
+			Name:   "switchyard_workflow",
+			Schema: json.RawMessage(`{"type":"object","properties":{"data":{"type":"object","additionalProperties":true}}}`),
+			Strict: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	format := body["response_format"].(map[string]any)
+	schema := format["json_schema"].(map[string]any)
+	if schema["strict"] != false {
+		t.Fatalf("json_schema strict = %#v, want false", schema["strict"])
+	}
+}
+
 func TestAnthropicUsesMessagesAPI(t *testing.T) {
 	var body map[string]any
 	var gotKey, version string
