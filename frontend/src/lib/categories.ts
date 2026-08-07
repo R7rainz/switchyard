@@ -1,4 +1,5 @@
 import type { Pastel } from "@/components/ui";
+import { Bot, Braces, GitBranch, Globe2, Mail, MessageSquare, MessagesSquare, Zap, type LucideIcon } from "lucide-react";
 
 /**
  * A node family and the colour it wears.
@@ -37,4 +38,17 @@ export function paletteFor(nodeType: string) {
   return category in categories
     ? categories[category as Category]
     : { label: category || "Node", tone: "pink" as Pastel, hex: "#ecebea" };
+}
+
+export function iconFor(nodeType: string): LucideIcon {
+  const category = categoryOf(nodeType);
+  if (category === "trigger") return Zap;
+  if (category === "logic") return Braces;
+  if (category === "ai") return Bot;
+  if (category === "http") return Globe2;
+  if (category === "github") return GitBranch;
+  if (category === "slack") return MessageSquare;
+  if (category === "discord") return MessagesSquare;
+  if (category === "email") return Mail;
+  return Braces;
 }

@@ -33,7 +33,14 @@ type genericWebhookAPI struct {
 // Authentication is an HMAC over the exact request body using webhook/default.
 func (a *genericWebhookAPI) receive(w http.ResponseWriter, r *http.Request) {
 	workspaceID, workflowID := chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID")
-	flow, err := a.workflows.Get(r.Context(), workspaceID, workflowID)
+	var flow workflow.Workflow
+	var err error
+	if workspaceID == "" {
+		flow, err = a.workflows.FindByID(r.Context(), workflowID)
+		workspaceID = flow.WorkspaceID
+	} else {
+		flow, err = a.workflows.Get(r.Context(), workspaceID, workflowID)
+	}
 	if err != nil || !hasWebhookTrigger(flow.Graph) {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
 		return

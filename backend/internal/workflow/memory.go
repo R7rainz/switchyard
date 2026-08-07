@@ -33,6 +33,14 @@ func (m *MemoryStore) Create(_ context.Context, w Workflow) error {
 	return nil
 }
 
+func (m *MemoryStore) CreateWithVersion(_ context.Context, w Workflow, version Version) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.workflows[workflowKey(w.WorkspaceID, w.ID)] = w
+	m.versions[workflowKey(version.WorkspaceID, version.WorkflowID)] = append(m.versions[workflowKey(version.WorkspaceID, version.WorkflowID)], version)
+	return nil
+}
+
 // Get keys on the workspace as well as the id, so asking the wrong workspace
 // for a real workflow is a miss rather than a hit — the same answer Postgres
 // gives, because the workspace is in its WHERE clause too.
@@ -44,6 +52,17 @@ func (m *MemoryStore) Get(_ context.Context, workspaceID, id string) (Workflow, 
 		return Workflow{}, ErrNotFound
 	}
 	return w, nil
+}
+
+func (m *MemoryStore) GetByID(_ context.Context, id string) (Workflow, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, w := range m.workflows {
+		if w.ID == id {
+			return w, nil
+		}
+	}
+	return Workflow{}, ErrNotFound
 }
 
 func (m *MemoryStore) List(_ context.Context, workspaceID string) ([]Workflow, error) {
@@ -81,6 +100,24 @@ func (m *MemoryStore) Update(_ context.Context, w Workflow) error {
 		return ErrNotFound
 	}
 	m.workflows[key] = w
+	return nil
+}
+
+func (m *MemoryStore) UpdateWithVersion(_ context.Context, w Workflow, version Version) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := workflowKey(w.WorkspaceID, w.ID)
+	if _, ok := m.workflows[key]; !ok {
+		return ErrNotFound
+	}
+	m.workflows[key] = w
+	versions := m.versions[key]
+	number := 1
+	if len(versions) > 0 {
+		number = versions[len(versions)-1].Number + 1
+	}
+	version.Number = number
+	m.versions[key] = append(versions, version)
 	return nil
 }
 

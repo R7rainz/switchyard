@@ -133,11 +133,16 @@ func (a *executionAPI) retryExecution(w http.ResponseWriter, r *http.Request) {
 // listExecutions returns a workspace's runs, newest first, optionally for one
 // workflow.
 func (a *executionAPI) listExecutions(w http.ResponseWriter, r *http.Request) {
+	const maxExecutionListLimit = 500
 	limit := 0
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil || parsed < 1 {
 			writeError(w, r, invalid("limit must be a positive number"))
+			return
+		}
+		if parsed > maxExecutionListLimit {
+			writeError(w, r, invalid("limit must be at most 500"))
 			return
 		}
 		limit = parsed

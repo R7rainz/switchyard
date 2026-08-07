@@ -221,5 +221,28 @@ export function RunProvider({
     };
   }, [workspaceId, executionId, finished]);
 
+  // WebSockets are a fast notification path, not durable state. A laptop can
+  // sleep, a proxy can close an idle socket, and the run must still converge
+  // without asking the user to reload the page.
+  useEffect(() => {
+    if (!executionId || finished) return;
+    let live = true;
+    const refresh = () => {
+      executions
+        .get(workspaceId, executionId)
+        .then((snapshot) => {
+          if (live) setState((current) => merged(current, snapshot));
+        })
+        .catch((error) => {
+          if (live) setState((current) => ({ ...current, loadError: apiError(error) }));
+        });
+    };
+    const timer = window.setInterval(refresh, 3000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [workspaceId, executionId, finished]);
+
   return <RunContext.Provider value={state}>{children}</RunContext.Provider>;
 }

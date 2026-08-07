@@ -98,10 +98,13 @@ func NewRouter(deps Deps) http.Handler {
 	genericHooks := &genericWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
 	// Webhooks authenticate with their provider signature rather than a user
 	// JWT, so they stay outside the protected API group. Keep the old path for
-	// existing GitHub installations while exposing the versioned contract.
+	// existing GitHub installations while exposing the short public contract.
+	router.Post("/api/v1/hooks/github/{workflowID}", githubHooks.receivePublic)
 	router.Post("/api/v1/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
+	router.Post("/hooks/github/{workflowID}", githubHooks.receivePublic)
 	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 	router.Post("/api/v1/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
+	router.Post("/api/v1/hooks/webhook/{workflowID}", genericHooks.receive)
 	router.Post("/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
 	router.Get("/api/v1/oauth/callback/{provider}", oauthHandlers.callback)
 

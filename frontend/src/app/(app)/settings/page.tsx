@@ -60,7 +60,7 @@ export default function SettingsPage() {
  * secret could be revealed.
  */
 function Keys({ workspaceId }: { workspaceId: string | undefined }) {
-  const { data: keys, isPending } = useCredentials(workspaceId);
+  const { data: keys, isPending, error: keysError } = useCredentials(workspaceId);
   const put = usePutCredential(workspaceId);
   const remove = useDeleteCredential(workspaceId);
 
@@ -93,6 +93,8 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
           </p>
         </Card>
       )}
+
+      {keysError && <ErrorNote>{apiError(keysError)}</ErrorNote>}
 
       <Card>
         <form
@@ -179,6 +181,10 @@ function credentialHint(provider: string, name: string) {
   if (provider === "github" && name === "default") {
     return "GitHub personal access token used by pull-request, issue, comment, and merge nodes.";
   }
+  if (provider === "slack" && name === "default") return "Slack incoming webhook URL.";
+  if (provider === "discord" && name === "default") return "Discord webhook URL.";
+  if (provider === "email" && name === "default") return 'SMTP JSON, for example {"host":"smtp.example.com","port":587,"username":"...","password":"...","from":"bot@example.com"}.';
+  if (provider === "webhook" && name === "default") return "Secret used to sign generic inbound webhook requests with X-Switchyard-Signature.";
   return "Stored encrypted. It cannot be read back afterwards.";
 }
 

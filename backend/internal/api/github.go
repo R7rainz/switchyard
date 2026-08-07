@@ -31,8 +31,29 @@ type githubWebhookAPI struct {
 func (a *githubWebhookAPI) receive(w http.ResponseWriter, r *http.Request) {
 	workspaceID, workflowID := chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID")
 	flow, err := a.workflows.Get(r.Context(), workspaceID, workflowID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
+		return
+	}
+	a.receiveWorkflow(w, r, workspaceID, workflowID, flow)
+}
+
+// receivePublic accepts the short URL users copy into GitHub. A workflow id
+// is a 26-character crypto-random value, so it is safe to use as the public
+// hook token while keeping the workspace id out of setup instructions.
+func (a *githubWebhookAPI) receivePublic(w http.ResponseWriter, r *http.Request) {
+	workflowID := chi.URLParam(r, "workflowID")
+	flow, err := a.workflows.FindByID(r.Context(), workflowID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
+		return
+	}
+	a.receiveWorkflow(w, r, flow.WorkspaceID, workflowID, flow)
+}
+
+func (a *githubWebhookAPI) receiveWorkflow(w http.ResponseWriter, r *http.Request, workspaceID, workflowID string, flow workflow.Workflow) {
 	trigger := githubTrigger(flow.Graph)
-	if err != nil || trigger == nil {
+	if trigger == nil {
 		writeJSON(w, http.StatusNotFound, map[string]any{"error": "not found"})
 		return
 	}

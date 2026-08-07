@@ -51,6 +51,23 @@ func TestCreate(t *testing.T) {
 	}
 }
 
+func TestFindByIDResolvesAcrossWorkspaces(t *testing.T) {
+	ctx := context.Background()
+	s := service(t)
+	created := mustCreate(t, s)
+
+	found, err := s.FindByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("FindByID: %v", err)
+	}
+	if found.ID != created.ID || found.WorkspaceID != wsA {
+		t.Fatalf("FindByID = %+v, want workflow %q in %q", found, created.ID, wsA)
+	}
+	if _, err := s.FindByID(ctx, "missing"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing FindByID = %v, want ErrNotFound", err)
+	}
+}
+
 // A corrupt graph never reaches the store, by any path that writes one.
 func TestCreateRejectsCorruptGraph(t *testing.T) {
 	ctx := context.Background()

@@ -8,7 +8,7 @@ import { RunProvider, useRunState } from "@/components/builder/run-state";
 import { GraphPreview } from "@/components/graph-preview";
 import { RunStatus, formatDuration } from "@/components/run-status";
 import { Button, Eyebrow, ErrorNote, Skeleton, cx } from "@/components/ui";
-import type { ExecutionStatus, WorkflowNode } from "@/lib/api";
+import { apiError, type ExecutionStatus, type WorkflowNode } from "@/lib/api";
 import { paletteFor } from "@/lib/categories";
 import { specFor } from "@/lib/node-types";
 import { relativeTime } from "@/lib/time";
@@ -104,6 +104,8 @@ function RunView({ workspaceId }: { workspaceId: string }) {
           )}
         </div>
       </div>
+
+      {(retry.error || cancel.error) && <div className="mb-4"><ErrorNote>{apiError(retry.error ?? cancel.error)}</ErrorNote></div>}
 
       <div className="grid items-center gap-4 rounded-xl border border-hairline bg-canvas-white p-5 sm:grid-cols-[1fr_auto]">
         <div className="grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4">

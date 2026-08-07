@@ -56,12 +56,20 @@ func (o *OpenRouter) Complete(ctx context.Context, key string, req Request) (Res
 		if req.JSONSchema.Name == "" || len(req.JSONSchema.Schema) == 0 {
 			return Response{}, fmt.Errorf("%w: JSON schema needs a name and schema", ErrProvider)
 		}
+		schema := *req.JSONSchema
+		// Workflow node data is intentionally open-ended. OpenRouter forwards
+		// strict schemas to routed providers that reject an object unless every
+		// object declares additionalProperties=false, so use JSON-schema guidance
+		// without strict mode for the extensible workflow envelope.
+		if schema.Name == "switchyard_workflow" {
+			schema.Strict = false
+		}
 		body["response_format"] = map[string]any{
 			"type": "json_schema",
 			"json_schema": map[string]any{
-				"name":   req.JSONSchema.Name,
-				"strict": req.JSONSchema.Strict,
-				"schema": json.RawMessage(req.JSONSchema.Schema),
+				"name":   schema.Name,
+				"strict": schema.Strict,
+				"schema": json.RawMessage(schema.Schema),
 			},
 		}
 		// Do not silently route to a provider that drops structured-output

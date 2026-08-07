@@ -132,12 +132,22 @@ func (s *Service) run(ctx context.Context, run Execution) {
 func (s *Service) finish(ctx context.Context, id string, status Status, message string) {
 	write, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	if err := s.store.Finish(write, id, status, message, s.now()); err != nil {
+	transitioned := true
+	var err error
+	if finisher, ok := s.store.(transitionFinisher); ok {
+		transitioned, err = finisher.finishIfRunning(write, id, status, message, s.now())
+	} else {
+		err = s.store.Finish(write, id, status, message, s.now())
+	}
+	if err != nil {
 		// Not announced, on purpose. Saying SUCCEEDED for a write that did not
 		// land leaves the watcher showing one thing while a refresh shows
 		// another, and later a third once Reclaim catches the row. Silence is
 		// honest: the client keeps showing what the database agrees with.
 		zerolog.Ctx(ctx).Error().Err(err).Str("execution_id", id).Msg("could not finish execution")
+		return
+	}
+	if !transitioned {
 		return
 	}
 	s.publish(Event{Type: EventExecution, ExecutionID: id, Status: status, Error: message})

@@ -54,6 +54,13 @@ func (f *failingStore) Finish(ctx context.Context, id string, status Status, mes
 	return f.MemoryStore.Finish(ctx, id, status, message, at)
 }
 
+func (f *failingStore) finishIfRunning(ctx context.Context, id string, status Status, message string, at time.Time) (bool, error) {
+	if f.failFinish {
+		return false, errStoreDown
+	}
+	return f.MemoryStore.finishIfRunning(ctx, id, status, message, at)
+}
+
 func (f *failingStore) SaveNodeRun(ctx context.Context, run NodeRun) error {
 	if f.failNode {
 		return errStoreDown

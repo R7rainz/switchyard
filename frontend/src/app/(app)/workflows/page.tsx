@@ -292,6 +292,7 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
             {start.isPending ? "Starting…" : "Run"}
           </Button>
         </div>
+        {(start.error || duplicate.error) && <div className="px-5 pb-3"><ErrorNote>{apiError(start.error ?? duplicate.error)}</ErrorNote></div>}
       </Card>
 
       <Modal open={confirming} onClose={() => setConfirming(false)} title="Delete workflow">

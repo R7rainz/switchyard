@@ -136,6 +136,24 @@ func (m *MemoryStore) Finish(_ context.Context, id string, status Status, messag
 	return nil
 }
 
+func (m *MemoryStore) finishIfRunning(_ context.Context, id string, status Status, message string, at time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key, ok := m.byID(id)
+	if !ok {
+		return false, ErrNotFound
+	}
+	run := m.runs[key]
+	if run.Status.Done() {
+		return false, nil
+	}
+	run.Status = status
+	run.Error = message
+	run.FinishedAt = at
+	m.runs[key] = run
+	return true, nil
+}
+
 func (m *MemoryStore) SaveNodeRun(_ context.Context, row NodeRun) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -11,7 +11,7 @@ import {
   ErrorNote,
   Eyebrow,
 } from "@/components/ui";
-import { apiError, type Graph } from "@/lib/api";
+import { apiError, genericWebhookURL, githubWebhookURL, type Graph } from "@/lib/api";
 import { useCreateWorkflow, useWorkspace } from "@/lib/queries";
 
 const githubTestGraph: Graph = {
@@ -63,7 +63,7 @@ export default function DocsPage() {
           <h2 className="mt-3 text-subheading text-ink">Create a known-good test workflow</h2>
           <p className="mt-2 text-body-sm leading-relaxed text-ash">
             This creates a GitHub pull-request trigger with the correct payload references. Open
-            the workflow after creation to copy its IDs into the repository webhook URL.
+            the workflow after creation and use its Copy webhook URL button.
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button disabled={!workspace || create.isPending} onClick={createTestWorkflow}>
@@ -93,10 +93,11 @@ export default function DocsPage() {
         <Card>
           <Eyebrow>2 · Add the repository webhook</Eyebrow>
           <p className="mt-3 text-body-sm leading-relaxed text-ash">
-            In GitHub, open Repository Settings → Webhooks → Add webhook. Use the Render backend,
-            not the Vercel frontend:
+            In GitHub, open Repository Settings → Webhooks → Add webhook. Use the Switchyard API
+            URL shown below, not the browser app URL. The builder&apos;s Copy webhook URL button
+            provides the workflow-specific value automatically.
           </p>
-          <CodeBlock>https://YOUR-RENDER-URL/api/v1/hooks/github/WORKSPACE_ID/WORKFLOW_ID</CodeBlock>
+          <CodeBlock>{githubWebhookURL("WORKFLOW_ID")}</CodeBlock>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-body-sm text-ash">
             <li>Set content type to <code>application/json</code>.</li>
             <li>Use the same value saved as <code>github/webhook</code>.</li>
@@ -119,6 +120,20 @@ export default function DocsPage() {
             <StatusRow code="404" text="Wrong IDs or the workflow has no GitHub trigger." />
             <StatusRow code="503" text="github/webhook is missing in this workspace." />
           </div>
+        </Card>
+
+        <Card>
+          <Eyebrow>Generic inbound webhooks</Eyebrow>
+          <p className="mt-3 text-body-sm leading-relaxed text-ash">
+            For a workflow with a Webhook trigger, copy the short URL from its builder and send a
+            JSON or text POST. Save the request secret as <code>webhook/default</code> in Settings
+            and sign the exact request body with HMAC-SHA256.
+          </p>
+          <CodeBlock>{genericWebhookURL("WORKFLOW_ID")}</CodeBlock>
+          <p className="mt-3 text-caption leading-relaxed text-ash">
+            Send the hexadecimal digest as <code>X-Switchyard-Signature-256: sha256=&lt;digest&gt;</code>.
+            Add <code>X-Webhook-Delivery</code> for idempotent redelivery handling.
+          </p>
         </Card>
 
         <p className="text-body-sm text-ash">

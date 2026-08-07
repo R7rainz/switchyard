@@ -66,6 +66,10 @@ type Template struct {
 type Store interface {
 	Create(ctx context.Context, w Workflow) error
 	Get(ctx context.Context, workspaceID, id string) (Workflow, error)
+	// GetByID is only for signed public webhook handlers. The handler has no
+	// workspace to scope by, but the workflow primary key still makes this a
+	// constant-time lookup rather than a cross-tenant table scan.
+	GetByID(ctx context.Context, id string) (Workflow, error)
 
 	// List returns every workflow in the workspace, graphs included. Loading
 	// graphs the dashboard does not draw is waste, but a Workflow whose Graph
@@ -83,6 +87,11 @@ type Store interface {
 	CreateTemplate(ctx context.Context, template Template) error
 	ListTemplates(ctx context.Context, workspaceID string) ([]Template, error)
 	GetTemplate(ctx context.Context, workspaceID, id string) (Template, error)
+}
+
+type atomicVersionStore interface {
+	CreateWithVersion(ctx context.Context, w Workflow, version Version) error
+	UpdateWithVersion(ctx context.Context, w Workflow, version Version) error
 }
 
 // Service holds the rules about what a workflow may look like. There is really
@@ -129,14 +138,18 @@ func (s *Service) Create(ctx context.Context, workspaceID, creatorID, name, desc
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	if err := s.store.Create(ctx, created); err != nil {
-		return Workflow{}, err
-	}
-	if err := s.store.CreateVersion(ctx, Version{
+	version := Version{
 		ID: randomID(), WorkspaceID: workspaceID, WorkflowID: created.ID, Number: 1,
 		Name: created.Name, Description: created.Description, Graph: created.Graph,
 		CreatedBy: creatorID, CreatedAt: now,
-	}); err != nil {
+	}
+	if atomic, ok := s.store.(atomicVersionStore); ok {
+		if err := atomic.CreateWithVersion(ctx, created, version); err != nil {
+			return Workflow{}, err
+		}
+	} else if err := s.store.Create(ctx, created); err != nil {
+		return Workflow{}, err
+	} else if err := s.store.CreateVersion(ctx, version); err != nil {
 		return Workflow{}, err
 	}
 	return created, nil
@@ -144,6 +157,19 @@ func (s *Service) Create(ctx context.Context, workspaceID, creatorID, name, desc
 
 func (s *Service) Get(ctx context.Context, workspaceID, id string) (Workflow, error) {
 	return s.store.Get(ctx, workspaceID, id)
+}
+
+// FindByID resolves the opaque id used by public webhook URLs. Workflow ids
+// are generated with crypto/rand, so the id itself is the public token; the
+// workspace remains on the returned row for credential and execution scoping.
+// The workspace-scoped Get method remains the default for authenticated API
+// calls, where the caller already supplied the workspace.
+func (s *Service) FindByID(ctx context.Context, id string) (Workflow, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Workflow{}, ErrNotFound
+	}
+	return s.store.GetByID(ctx, id)
 }
 
 func (s *Service) List(ctx context.Context, workspaceID string) ([]Workflow, error) {
@@ -201,9 +227,6 @@ func (s *Service) Update(ctx context.Context, workspaceID, id string, patch Patc
 	}
 
 	stored.UpdatedAt = s.now()
-	if err := s.store.Update(ctx, stored); err != nil {
-		return Workflow{}, err
-	}
 	versions, err := s.store.ListVersions(ctx, workspaceID, id)
 	if err != nil {
 		return Workflow{}, err
@@ -212,11 +235,18 @@ func (s *Service) Update(ctx context.Context, workspaceID, id string, patch Patc
 	if len(versions) > 0 {
 		number = versions[len(versions)-1].Number + 1
 	}
-	if err := s.store.CreateVersion(ctx, Version{
+	version := Version{
 		ID: randomID(), WorkspaceID: workspaceID, WorkflowID: stored.ID, Number: number,
 		Name: stored.Name, Description: stored.Description, Graph: stored.Graph,
 		CreatedBy: stored.CreatedBy, CreatedAt: stored.UpdatedAt,
-	}); err != nil {
+	}
+	if atomic, ok := s.store.(atomicVersionStore); ok {
+		if err := atomic.UpdateWithVersion(ctx, stored, version); err != nil {
+			return Workflow{}, err
+		}
+	} else if err := s.store.Update(ctx, stored); err != nil {
+		return Workflow{}, err
+	} else if err := s.store.CreateVersion(ctx, version); err != nil {
 		return Workflow{}, err
 	}
 	return stored, nil

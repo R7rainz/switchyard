@@ -1,8 +1,9 @@
 "use client";
 
 import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { createElement } from "react";
 
-import { paletteFor } from "@/lib/categories";
+import { iconFor, paletteFor } from "@/lib/categories";
 import { conditionHandles, specFor, switchHandles } from "@/lib/node-types";
 import { cx } from "@/components/ui";
 import { useNodeStatus } from "./run-state";
@@ -54,6 +55,9 @@ export function BuilderNode({ id, type, data, selected }: NodeProps) {
 
       <div className="flex flex-col gap-1 px-3 py-2.5">
         <span className="flex items-center gap-1.5">
+          <span className="flex size-6 items-center justify-center rounded-md" style={{ background: `${palette.hex}99` }}>
+            {createElement(iconFor(type), { size: 13, strokeWidth: 1.8, className: "text-ink" })}
+          </span>
           <span className="text-eyebrow uppercase tracking-[0.3px] text-ash">{palette.label}</span>
           {run && (
             <span
