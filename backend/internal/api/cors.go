@@ -25,9 +25,10 @@ func CORS(allowedOrigin string) func(http.Handler) http.Handler {
 
 			if origin != "" && origin == allowedOrigin {
 				w.Header().Set("Access-Control-Allow-Origin", origin)
-				// Authorization is not a header a browser sends cross-origin
-				// without being told it may.
-				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
+				// These are the headers the browser sends on authenticated,
+				// idempotent API requests. Every one must be named here or the
+				// preflight blocks the real request before it reaches the handler.
+				w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Idempotency-Key")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 				// Retry-After is not a header a browser hands to JavaScript unless
 				// it is named here. Without this the rate limiter sets a value the

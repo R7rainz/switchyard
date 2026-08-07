@@ -39,6 +39,9 @@ func TestPreflightIsAnsweredWithoutAToken(t *testing.T) {
 	if got := recorder.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Authorization") {
 		t.Errorf("Allow-Headers = %q, want it to permit Authorization", got)
 	}
+	if got := recorder.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Idempotency-Key") {
+		t.Errorf("Allow-Headers = %q, want it to permit Idempotency-Key", got)
+	}
 }
 
 func TestPreflightAllowsCredentialPut(t *testing.T) {
