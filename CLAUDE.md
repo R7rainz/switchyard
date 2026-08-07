@@ -159,10 +159,12 @@ which applies `RequireAuth` to the whole subtree:
         r.Get("/me", handleMe)
     })
 
-Signed GitHub webhooks use `/api/v1/hooks/github/{workspaceID}/{workflowID}`.
-The original `/hooks/github/{workspaceID}/{workflowID}` path remains available
-for installations that already configured it; webhook requests authenticate
-with GitHub's signature instead of a user JWT.
+Signed GitHub webhooks use the short public URL
+`/api/v1/hooks/github/{workflowID}`. The workflow id is a crypto-random opaque
+token and the builder copies the complete URL for the user. The original
+`/api/v1/hooks/github/{workspaceID}/{workflowID}` and `/hooks/...` paths remain
+available for installations that already configured them; webhook requests
+authenticate with GitHub's signature instead of a user JWT.
 
 One consequence: an unknown path under `/api/v1` (or its `/api` compatibility
 alias) answers **401, not 404**, because group middleware runs before the
