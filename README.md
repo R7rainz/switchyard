@@ -1,71 +1,122 @@
+# Switchyard
+
+Switchyard is an AI-powered workflow automation platform for software teams.
+Describe an engineering workflow in natural language, get an editable visual
+graph, review it, and then execute it deterministically with visible logs.
+
+AI drafts the route; the user still owns every node, connection, credential,
+and execution.
+
 <img width="2856" height="2328" alt="image" src="https://github.com/user-attachments/assets/7df74d4b-6a95-4a01-9f75-5dd396102e5a" />
 
-## V1 scope and status
+## What Switchyard does
 
-Switchyard V1 follows the HLD's modular-monolith design: a Next.js frontend
-communicates with a Go/Chi API over REST and WebSockets, with PostgreSQL as the
-system of record and external integrations behind backend services.
+- Builds workflows visually with React Flow.
+- Generates editable workflow graphs from natural-language prompts.
+- Runs workflows asynchronously with status, timing, node outputs, errors,
+  retries, and live WebSocket events.
+- Keeps execution graph snapshots so a completed run always shows exactly what
+  it executed.
+- Gives teams workspace-scoped credentials, permissions, invitations, and
+  encrypted secret storage.
 
-### Planned V1 work delivered
+Switchyard is intentionally focused on engineers, DevOps, platform teams, and
+technical startups—not general-purpose marketing, HR, or sales automation.
 
-- Better Auth signup/login, JWT verification, sessions, and protected API routes.
-- Workspace-based collaboration with four-role RBAC, invitations, membership
-  rules, and workspace-scoped encrypted credentials.
-- Workflow CRUD, graph validation, React Flow builder, node configuration, and
-  execution history.
-- AI workflow generation through selectable OpenRouter, OpenAI, Anthropic, and
-  Gemini providers, editable generated graphs, and user feedback capture.
-- Deterministic execution with graph snapshots, status, timing, node outputs,
-  errors, branching, variables, and live WebSocket events.
-- Manual, scheduled, GitHub pull-request webhook, and workflow webhook trigger
-  primitives.
-- Working nodes for conditions, variables, HTTP requests, AI prompts, GitHub
-  pull-request reads, issue creation, comments, merges, Slack, Discord, Email,
-  Switch, Delay, Chat, Summarize, Classification, and Decision.
-- Dashboard, workflow builder, run viewer, settings, invite flows, and landing
-  page surfaces.
+## V1 delivered
 
-### Planned V1 work completed
+### Workflow building and execution
 
-- Public generic inbound webhooks alongside signed GitHub webhooks.
-- GitHub issue, comment, and merge nodes, plus Discord and Email integrations.
-- Workflow duplication, version history/rollback, and reusable templates.
-- Signed OAuth authorization-code flows storing encrypted provider tokens, plus
-  local artifact upload/download/delete APIs.
+- Workflow CRUD, graph validation, autosaving, drafts, duplication, version
+  history, rollback, and reusable templates.
+- Manual, scheduled, GitHub pull-request, and generic inbound-webhook triggers.
+- Conditions, Switch, Delay, variables, HTTP requests, and branching.
+- Chat, Summarize, Classification, Decision, and general AI nodes.
+- Execution history, cancellation, explicit retry/recovery, startup reclaim of
+  interrupted runs, idempotency keys, and live logs.
 
-Execution graph snapshots still retain exactly what each run executed;
-`workflow_version` now separately records editable workflow history.
+### AI and integrations
 
-## Remaining V1 TODO
+- OpenRouter is the default provider abstraction.
+- Native OpenAI, Anthropic, and Google Gemini providers are supported through
+  the same interface.
+- GitHub pull-request reads, issue creation, comments, and merges.
+- Slack messages, Discord webhook messages, and SMTP email messages.
+- Signed GitHub webhooks and signed generic webhooks.
 
-- [x] Add a public generic inbound-webhook route.
-- [x] Add dedicated `Switch` and `Delay` nodes plus `Chat`, `Summarize`,
-  `Classification`, and `Decision` AI nodes.
-- [x] Add GitHub issue, comment, and merge nodes, plus Discord and Email
-  integrations.
-- [x] Add workflow duplication, version history/rollback, and a template
-  library.
-- [x] Add native OpenAI, Anthropic, and Gemini providers behind the shared AI
-  interface.
-- [x] Add OAuth credential flows and local artifact storage. S3 is the next
-  storage backend, explicitly deferred by the V1 storage decision.
+### Accounts, security, and storage
 
-### Extra improvements added to V1
+- Better Auth signup/login, JWT verification, sessions, and workspace RBAC.
+- Viewer, Member, Admin, and Owner roles with membership and invitation rules.
+- Encrypted credentials with key rotation; OAuth authorization-code flows store
+  provider token documents through the credential service.
+- Local artifact upload, download, and deletion APIs.
+- SSRF protection, signed webhook validation, strict CORS, rate limiting, and
+  migration verification.
 
-- Explicit retries for failed or cancelled runs, failed-run recovery, durable
-  idempotency keys, and startup reclaim of abandoned executions.
-- GitHub delivery deduplication and scheduler deduplication to prevent repeated
-  side effects.
-- SSRF protection for HTTP nodes, signed webhook validation, AI generation rate
-  limiting, and strict CORS/auth boundaries.
-- Versioned credential encryption and key rotation, migration verification, and
-  additional execution/reliability tests.
-- AI feedback persistence for improving generated workflows.
-- Native AI provider adapters with per-node and per-generation provider
-  selection; OpenRouter remains the default.
-- Versioned backend API under `/api/v1`, with the existing `/api` path retained
-  as a compatibility alias during migration.
-- Versioned signed GitHub webhooks under `/api/v1/hooks/github/...`, with the
-  original `/hooks/github/...` path retained for existing installations.
-- Interactive pricing cards and WebGL landing-page effects. Billing and
-  subscriptions are intentionally not implemented in V1.
+### Frontend and API
+
+- Dashboard, workflow builder, run viewer, settings, invitation flows, and
+  landing page.
+- Interactive workflow cards, duplication, version history/restore, template
+  browsing, and save-as-template controls.
+- Canonical REST API under `/api/v1`; `/api` remains a compatibility alias.
+- REST and WebSocket communication between the Next.js frontend and Go API.
+
+## Architecture
+
+V1 is a modular monolith:
+
+```text
+Next.js + React Flow
+        │ REST / WebSocket
+        ▼
+Go + Chi API
+        │
+        ├── Auth, workspace, credential, workflow, execution services
+        ├── Workflow engine and integration runners
+        └── PostgreSQL + local artifact storage
+```
+
+The backend is split into packages rather than deployable microservices. The
+workflow engine does not know about HTTP, and integrations receive secrets only
+through the credential service.
+
+## V1 boundaries
+
+- Storage is local filesystem in V1; an S3 backend is the next storage adapter.
+- Billing and subscriptions are not implemented.
+- Azure AI, browser automation, Docker, SSH, Kubernetes, databases, and other
+  large integration families remain future work.
+- Kubernetes and microservices are intentionally out of scope for V1.
+
+## Local development
+
+The frontend uses pnpm and the backend uses Go. Start PostgreSQL with the
+project's Docker Compose setup, then run:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev
+```
+
+In another terminal, configure `DATABASE_URL` and
+`SWITCHYARD_CREDENTIAL_KEY`, then run:
+
+```bash
+cd backend
+go run ./cmd/switchyard
+```
+
+Optional OAuth provider settings use `SWITCHYARD_OAUTH_*` variables, and local
+artifact files default to `./data/artifacts` (override with
+`SWITCHYARD_ARTIFACT_DIR`). See [`CLAUDE.md`](CLAUDE.md) for the complete
+architecture and configuration decisions.
+
+## Verification
+
+```bash
+cd backend && go test ./... && go vet ./...
+cd frontend && pnpm lint && pnpm build
+```
