@@ -36,6 +36,7 @@ import {
 import { specFor } from "@/lib/node-types";
 import {
   useCancelExecution,
+  useCreateTemplate,
   useExecutions,
   useStartExecution,
   useWorkflow,
@@ -97,6 +98,7 @@ function Builder({
   const start = useStartExecution(workspaceId);
   const restore = useRestoreWorkflow(workspaceId, id);
   const versions = useWorkflowVersions(workspaceId, id);
+  const createTemplate = useCreateTemplate(workspaceId);
   const cancel = useCancelExecution(workspaceId);
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
@@ -105,6 +107,7 @@ function Builder({
   // from the newest run on load so reopening a workflow mid-run shows it.
   const [watchingId, setWatchingId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTemplate, setShowTemplate] = useState(false);
   const runId = watchingId ?? (lastRun && lastRun.status === "RUNNING" ? lastRun.id : null);
 
   const addNode = useCallback(
@@ -165,6 +168,10 @@ function Builder({
         <Button variant="neutral" className="h-9" onClick={() => setShowHistory(true)}>
           <History size={14} strokeWidth={1.75} />
           <span className="hidden sm:inline">History</span>
+        </Button>
+
+        <Button variant="neutral" className="hidden h-9 lg:inline-flex" onClick={() => setShowTemplate(true)}>
+          Save template
         </Button>
 
         {lastRun?.status === "RUNNING" && (
@@ -242,7 +249,78 @@ function Builder({
           ))}
         </div>
       </Modal>
+
+      <SaveTemplateModal
+        open={showTemplate}
+        pending={createTemplate.isPending}
+        error={createTemplate.error}
+        onClose={() => {
+          createTemplate.reset();
+          setShowTemplate(false);
+        }}
+        onSave={(name, description) =>
+          createTemplate.mutate(
+            { name, description, graph },
+            { onSuccess: () => setShowTemplate(false) },
+          )
+        }
+      />
     </div>
+  );
+}
+
+function SaveTemplateModal({
+  open,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  open: boolean;
+  pending: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSave: (name: string, description: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  return (
+    <Modal open={open} onClose={onClose} title="Save as template">
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSave(name, description);
+          setName("");
+          setDescription("");
+        }}
+      >
+        {error ? <ErrorNote>{apiError(error)}</ErrorNote> : null}
+        <label className="flex flex-col gap-1 text-body-sm text-ink">
+          Name
+          <input
+            autoFocus
+            required
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className="rounded-lg border border-hairline bg-canvas-white px-3 py-2 outline-none focus:border-ink"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-body-sm text-ink">
+          Description
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            rows={3}
+            className="rounded-lg border border-hairline bg-canvas-white px-3 py-2 outline-none focus:border-ink"
+          />
+        </label>
+        <div className="flex justify-end gap-3">
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={pending}>{pending ? "Saving…" : "Save template"}</Button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
