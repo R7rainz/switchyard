@@ -102,6 +102,7 @@ function Builder({
   const cancel = useCancelExecution(workspaceId);
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
+  const githubTriggered = nodes.some((node) => node.type === "trigger.github.pull_request");
 
   // The run this canvas is watching. Set when Run is pressed, and picked up
   // from the newest run on load so reopening a workflow mid-run shows it.
@@ -190,10 +191,16 @@ function Builder({
 
         <Button
           className="h-9"
-          // A graph with no nodes has no trigger, and the engine rejects that
-          // at Start. Saying so here beats a 400 the user has to interpret.
-          disabled={nodes.length === 0 || start.isPending || dirty || saving}
-          title={dirty || saving ? "Saving…" : undefined}
+          // GitHub-triggered graphs need the signed payload that only GitHub
+          // can provide; a manual start would fail every .trigger reference.
+          disabled={nodes.length === 0 || githubTriggered || start.isPending || dirty || saving}
+          title={
+            githubTriggered
+              ? "This workflow runs from a GitHub pull-request webhook"
+              : dirty || saving
+                ? "Saving…"
+                : undefined
+          }
           onClick={() =>
             start.mutate(id, { onSuccess: (run) => setWatchingId(run.id) })
           }
