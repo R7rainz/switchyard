@@ -193,3 +193,41 @@ func TestUpdateAndDeleteAreWorkspaceScoped(t *testing.T) {
 		t.Fatalf("Get: got %v, want ErrNotFound", err)
 	}
 }
+
+func TestVersionsDuplicateRestoreAndTemplates(t *testing.T) {
+	ctx := context.Background()
+	s := service(t)
+	created := mustCreate(t, s)
+
+	versions, err := s.Versions(ctx, wsA, created.ID)
+	if err != nil || len(versions) != 1 || versions[0].Number != 1 {
+		t.Fatalf("initial versions = %+v, err %v", versions, err)
+	}
+	rename := "renamed"
+	if _, err := s.Update(ctx, wsA, created.ID, Patch{Name: &rename}); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	versions, err = s.Versions(ctx, wsA, created.ID)
+	if err != nil || len(versions) != 2 || versions[1].Name != "renamed" {
+		t.Fatalf("updated versions = %+v, err %v", versions, err)
+	}
+	if _, err := s.Restore(ctx, wsA, created.ID, 1); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	current, err := s.Get(ctx, wsA, created.ID)
+	if err != nil || current.Name != created.Name {
+		t.Fatalf("restored workflow = %+v, err %v", current, err)
+	}
+
+	copy, err := s.Duplicate(ctx, wsA, created.ID, "another-user")
+	if err != nil || copy.Name != created.Name+" copy" || copy.CreatedBy != "another-user" {
+		t.Fatalf("duplicate = %+v, err %v", copy, err)
+	}
+	template, err := s.CreateTemplate(ctx, wsA, user, "deploy template", "", validGraph())
+	if err != nil {
+		t.Fatalf("CreateTemplate: %v", err)
+	}
+	if got, err := s.Template(ctx, wsA, template.ID); err != nil || got.Name != template.Name {
+		t.Fatalf("Template = %+v, err %v", got, err)
+	}
+}

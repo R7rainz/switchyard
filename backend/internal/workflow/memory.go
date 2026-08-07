@@ -13,13 +13,15 @@ import (
 // permissive than the real store is how a bug ships green: the tests pass
 // against the lenient one and the deployment fails against the strict one.
 type MemoryStore struct {
+	versions  map[string][]Version
+	templates map[string]Template
 	mu        sync.RWMutex
 	workflows map[string]Workflow // keyed by workspaceID + "\x00" + id
 }
 
 // NewMemoryStore returns an empty store.
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{workflows: make(map[string]Workflow)}
+	return &MemoryStore{workflows: make(map[string]Workflow), versions: make(map[string][]Version), templates: make(map[string]Template)}
 }
 
 func workflowKey(workspaceID, id string) string { return workspaceID + "\x00" + id }
@@ -91,6 +93,63 @@ func (m *MemoryStore) Delete(_ context.Context, workspaceID, id string) error {
 	}
 	delete(m.workflows, key)
 	return nil
+}
+
+func (m *MemoryStore) CreateVersion(_ context.Context, version Version) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key := workflowKey(version.WorkspaceID, version.WorkflowID)
+	m.versions[key] = append(m.versions[key], version)
+	return nil
+}
+
+func (m *MemoryStore) ListVersions(_ context.Context, workspaceID, workflowID string) ([]Version, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	versions := append([]Version(nil), m.versions[workflowKey(workspaceID, workflowID)]...)
+	sort.Slice(versions, func(i, j int) bool { return versions[i].Number < versions[j].Number })
+	return versions, nil
+}
+
+func (m *MemoryStore) GetVersion(_ context.Context, workspaceID, workflowID string, number int) (Version, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, version := range m.versions[workflowKey(workspaceID, workflowID)] {
+		if version.Number == number {
+			return version, nil
+		}
+	}
+	return Version{}, ErrNotFound
+}
+
+func (m *MemoryStore) CreateTemplate(_ context.Context, template Template) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.templates[workflowKey(template.WorkspaceID, template.ID)] = template
+	return nil
+}
+
+func (m *MemoryStore) ListTemplates(_ context.Context, workspaceID string) ([]Template, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	var templates []Template
+	for _, template := range m.templates {
+		if template.WorkspaceID == workspaceID {
+			templates = append(templates, template)
+		}
+	}
+	sort.Slice(templates, func(i, j int) bool { return templates[i].Name < templates[j].Name })
+	return templates, nil
+}
+
+func (m *MemoryStore) GetTemplate(_ context.Context, workspaceID, id string) (Template, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	template, ok := m.templates[workflowKey(workspaceID, id)]
+	if !ok {
+		return Template{}, ErrNotFound
+	}
+	return template, nil
 }
 
 var _ Store = (*MemoryStore)(nil)

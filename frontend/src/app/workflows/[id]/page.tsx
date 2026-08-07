@@ -17,13 +17,14 @@ import "@xyflow/react/dist/style.css";
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, History, Play } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { nodeTypes } from "@/components/builder/node";
 import { Inspector, Palette, SaveState } from "@/components/builder/panels";
 import { RunProvider, useRunState } from "@/components/builder/run-state";
 import { RunStatus } from "@/components/run-status";
+import { Modal } from "@/components/modal";
 import { Button, ErrorNote, Skeleton, Wordmark } from "@/components/ui";
 import {
   apiError,
@@ -38,6 +39,8 @@ import {
   useExecutions,
   useStartExecution,
   useWorkflow,
+  useRestoreWorkflow,
+  useWorkflowVersions,
   useWorkspace,
 } from "@/lib/queries";
 
@@ -92,6 +95,8 @@ function Builder({
 
   const selected = nodes.find((node) => node.selected);
   const start = useStartExecution(workspaceId);
+  const restore = useRestoreWorkflow(workspaceId, id);
+  const versions = useWorkflowVersions(workspaceId, id);
   const cancel = useCancelExecution(workspaceId);
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
@@ -99,6 +104,7 @@ function Builder({
   // The run this canvas is watching. Set when Run is pressed, and picked up
   // from the newest run on load so reopening a workflow mid-run shows it.
   const [watchingId, setWatchingId] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const runId = watchingId ?? (lastRun && lastRun.status === "RUNNING" ? lastRun.id : null);
 
   const addNode = useCallback(
@@ -156,6 +162,11 @@ function Builder({
         <SaveState saving={saving} error={saveError} dirty={dirty} />
         {lastRun && <RunStatus status={lastRun.status} />}
 
+        <Button variant="neutral" className="h-9" onClick={() => setShowHistory(true)}>
+          <History size={14} strokeWidth={1.75} />
+          <span className="hidden sm:inline">History</span>
+        </Button>
+
         {lastRun?.status === "RUNNING" && (
           // Cancel reaches only runs this process is executing. One that
           // finished a moment ago answers 409, which is honest rather than an
@@ -208,6 +219,29 @@ function Builder({
         />
       </div>
       </RunProvider>
+
+      <Modal open={showHistory} onClose={() => setShowHistory(false)} title="Version history">
+        <div className="flex flex-col gap-2">
+          {versions.isPending && <p className="text-body-sm text-ash">Loading versions…</p>}
+          {versions.error && <ErrorNote>{apiError(versions.error)}</ErrorNote>}
+          {versions.data?.map((version) => (
+            <div key={version.id} className="flex items-center gap-3 rounded-lg border border-hairline p-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-body-sm text-ink">v{version.number} · {version.name}</p>
+                <p className="text-caption text-ash">{new Date(version.createdAt).toLocaleString()}</p>
+              </div>
+              <Button
+                variant="neutral"
+                className="h-8 px-3"
+                disabled={restore.isPending || version.number === versions.data.length}
+                onClick={() => restore.mutate(version.number, { onSuccess: () => setShowHistory(false) })}
+              >
+                Restore
+              </Button>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

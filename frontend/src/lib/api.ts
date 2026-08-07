@@ -102,6 +102,25 @@ export type Workflow = {
   updatedAt: string;
 };
 
+export type WorkflowVersion = {
+  id: string;
+  number: number;
+  name: string;
+  description: string;
+  graph: Graph;
+  createdBy?: string;
+  createdAt: string;
+};
+
+export type WorkflowTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  graph: Graph;
+  createdBy?: string;
+  createdAt: string;
+};
+
 /**
  * Workflow endpoints.
  *
@@ -139,6 +158,32 @@ export const workflows = {
 
   remove: (workspaceId: string, id: string) =>
     api.delete(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}`).then(() => undefined),
+
+  duplicate: (workspaceId: string, id: string) =>
+    api.post<Workflow>(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}/duplicate`).then((r) => r.data),
+
+  versions: (workspaceId: string, id: string) =>
+    api
+      .get<{ versions: WorkflowVersion[] }>(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}/versions`)
+      .then((r) => r.data.versions),
+
+  restore: (workspaceId: string, id: string, version: number) =>
+    api
+      .post<Workflow>(`${API_PATH}/workspaces/${workspaceId}/workflows/${id}/versions/${version}/restore`)
+      .then((r) => r.data),
+
+  templates: (workspaceId: string) =>
+    api
+      .get<{ templates: WorkflowTemplate[] }>(`${API_PATH}/workspaces/${workspaceId}/templates`)
+      .then((r) => r.data.templates),
+
+  createTemplate: (workspaceId: string, body: { name: string; description?: string; graph: Graph }) =>
+    api.post<WorkflowTemplate>(`${API_PATH}/workspaces/${workspaceId}/templates`, body).then((r) => r.data),
+
+  createFromTemplate: (workspaceId: string, templateId: string, body?: { name?: string; description?: string }) =>
+    api
+      .post<Workflow>(`${API_PATH}/workspaces/${workspaceId}/templates/${templateId}/workflows`, body ?? {})
+      .then((r) => r.data),
 
   /**
    * Ask a model for a workflow. Nothing is stored.

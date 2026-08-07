@@ -28,6 +28,7 @@ export const keys = {
   credentials: (workspaceId: string) => ["credentials", workspaceId] as const,
   members: (workspaceId: string) => ["members", workspaceId] as const,
   invites: (workspaceId: string) => ["invites", workspaceId] as const,
+  templates: (workspaceId: string) => ["templates", workspaceId] as const,
 };
 
 /**
@@ -74,6 +75,58 @@ export function useDeleteWorkflow(workspaceId: string | undefined) {
     // The list is refetched rather than spliced. A delete is rare and the
     // authoritative answer is one request away; hand-maintaining the cache is
     // how it drifts from the server.
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.workflows(workspaceId ?? "") }),
+  });
+}
+
+export function useDuplicateWorkflow(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => workflows.duplicate(workspaceId!, id),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.workflows(workspaceId ?? "") }),
+  });
+}
+
+export function useWorkflowVersions(workspaceId: string | undefined, id: string) {
+  return useQuery({
+    queryKey: ["workflow-versions", workspaceId ?? "", id],
+    queryFn: () => workflows.versions(workspaceId!, id),
+    enabled: Boolean(workspaceId && id),
+  });
+}
+
+export function useRestoreWorkflow(workspaceId: string | undefined, id: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (version: number) => workflows.restore(workspaceId!, id, version),
+    onSuccess: () => {
+      client.invalidateQueries({ queryKey: keys.workflow(workspaceId ?? "", id) });
+      client.invalidateQueries({ queryKey: ["workflow-versions", workspaceId ?? "", id] });
+    },
+  });
+}
+
+export function useTemplates(workspaceId: string | undefined) {
+  return useQuery({
+    queryKey: keys.templates(workspaceId ?? ""),
+    queryFn: () => workflows.templates(workspaceId!),
+    enabled: Boolean(workspaceId),
+  });
+}
+
+export function useCreateTemplate(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; description?: string; graph: Graph }) => workflows.createTemplate(workspaceId!, body),
+    onSuccess: () => client.invalidateQueries({ queryKey: keys.templates(workspaceId ?? "") }),
+  });
+}
+
+export function useCreateWorkflowFromTemplate(workspaceId: string | undefined) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { templateId: string; name?: string; description?: string }) =>
+      workflows.createFromTemplate(workspaceId!, body.templateId, { name: body.name, description: body.description }),
     onSuccess: () => client.invalidateQueries({ queryKey: keys.workflows(workspaceId ?? "") }),
   });
 }

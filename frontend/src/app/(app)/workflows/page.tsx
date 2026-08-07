@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Play, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Copy, Play, Plus, Sparkles, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
@@ -28,9 +28,12 @@ import {
   emptyGraph,
   useCreateWorkflow,
   useDeleteWorkflow,
+  useDuplicateWorkflow,
+  useCreateWorkflowFromTemplate,
   useExecutions,
   useStartExecution,
   useWorkflows,
+  useTemplates,
   useWorkspace,
 } from "@/lib/queries";
 
@@ -57,6 +60,7 @@ const exampleGraph = {
 export default function WorkflowsPage() {
   const { workspace } = useWorkspace();
   const { data: flows, isPending, error } = useWorkflows(workspace?.id);
+  const { data: templates } = useTemplates(workspace?.id);
   const [creating, setCreating] = useState(false);
   const [drafting, setDrafting] = useState(false);
 
@@ -113,6 +117,10 @@ export default function WorkflowsPage() {
         </div>
       )}
 
+      {templates && templates.length > 0 && workspace && (
+        <TemplateLibrary templates={templates} workspaceId={workspace.id} />
+      )}
+
       <RecentRuns workspaceId={workspace?.id} />
 
       <GenerateModal
@@ -130,6 +138,44 @@ export default function WorkflowsPage() {
   );
 }
 
+function TemplateLibrary({
+  templates,
+  workspaceId,
+}: {
+  templates: import("@/lib/api").WorkflowTemplate[];
+  workspaceId: string;
+}) {
+  const create = useCreateWorkflowFromTemplate(workspaceId);
+  return (
+    <section className="mt-8">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h2 className="text-subheading text-ink">Templates</h2>
+        <span className="text-caption text-ash">Reusable workflow starters</span>
+      </div>
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {templates.map((template) => (
+          <li key={template.id}>
+            <Card className="flex h-full flex-col gap-3 p-4">
+              <div>
+                <p className="text-body-sm text-ink">{template.name}</p>
+                {template.description && <p className="mt-1 text-caption text-ash">{template.description}</p>}
+              </div>
+              <Button
+                variant="neutral"
+                className="mt-auto h-8 self-start px-3"
+                disabled={create.isPending}
+                onClick={() => create.mutate({ templateId: template.id })}
+              >
+                {create.isPending ? "Creating…" : "Use template"}
+              </Button>
+            </Card>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * A card per workflow rather than a table row.
  *
@@ -139,6 +185,7 @@ export default function WorkflowsPage() {
  */
 function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspaceId: string }) {
   const remove = useDeleteWorkflow(workspaceId);
+  const duplicate = useDuplicateWorkflow(workspaceId);
   const start = useStartExecution(workspaceId);
   const [confirming, setConfirming] = useState(false);
 
@@ -174,16 +221,27 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
           <Link href={`/workflows/${workflow.id}`} className="text-body-lg text-ink hover:underline">
             {workflow.name}
           </Link>
-          <button
-            onClick={() => setConfirming(true)}
-            aria-label={`Delete ${workflow.name}`}
-            // Always visible where there is no hover. A control revealed only
-            // on hover does not exist on a touch screen, and focus-visible
-            // keeps it reachable by keyboard everywhere.
-            className="-m-1 shrink-0 rounded-lg p-1 text-stone hover:text-phoenix-orange focus-visible:opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
-          >
-            <Trash2 size={16} strokeWidth={1.75} />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              onClick={() => duplicate.mutate(workflow.id)}
+              aria-label={`Duplicate ${workflow.name}`}
+              title="Duplicate workflow"
+              disabled={duplicate.isPending}
+              className="-m-1 rounded-lg p-1 text-stone hover:text-ink focus-visible:opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+            >
+              <Copy size={16} strokeWidth={1.75} />
+            </button>
+            <button
+              onClick={() => setConfirming(true)}
+              aria-label={`Delete ${workflow.name}`}
+              // Always visible where there is no hover. A control revealed only
+              // on hover does not exist on a touch screen, and focus-visible
+              // keeps it reachable by keyboard everywhere.
+              className="-m-1 rounded-lg p-1 text-stone hover:text-phoenix-orange focus-visible:opacity-100 sm:opacity-0 sm:transition-opacity sm:group-hover:opacity-100"
+            >
+              <Trash2 size={16} strokeWidth={1.75} />
+            </button>
+          </div>
         </div>
 
         {workflow.description && (

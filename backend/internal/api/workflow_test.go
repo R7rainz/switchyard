@@ -161,6 +161,33 @@ func TestPatchLeavesUnsentFieldsAlone(t *testing.T) {
 	}
 }
 
+func TestWorkflowVersionsDuplicationAndTemplates(t *testing.T) {
+	router, _ := workflowRouter(t)
+	ws := firstWorkspace(t, router, "alice")
+	base := "/api/workspaces/" + ws + "/workflows"
+	_, created := call(t, router, http.MethodPost, base, "alice", `{"name":"deploy","graph":`+smallGraph+`}`)
+	id := field(t, created, "id")
+
+	if status, body := call(t, router, http.MethodGet, base+"/"+id+"/versions", "alice", ""); status != http.StatusOK {
+		t.Fatalf("versions: %d %v", status, body)
+	} else if versions, _ := body["versions"].([]any); len(versions) != 1 {
+		t.Fatalf("versions = %v", body["versions"])
+	}
+	if status, body := call(t, router, http.MethodPost, base+"/"+id+"/duplicate", "alice", ""); status != http.StatusCreated {
+		t.Fatalf("duplicate: %d %v", status, body)
+	}
+
+	templateBase := "/api/workspaces/" + ws + "/templates"
+	status, template := call(t, router, http.MethodPost, templateBase, "alice", `{"name":"starter","graph":`+smallGraph+`}`)
+	if status != http.StatusCreated {
+		t.Fatalf("template: %d %v", status, template)
+	}
+	templateID := field(t, template, "id")
+	if status, body := call(t, router, http.MethodPost, templateBase+"/"+templateID+"/workflows", "alice", "{}"); status != http.StatusCreated {
+		t.Fatalf("from template: %d %v", status, body)
+	}
+}
+
 // A workflow id from another workspace must not resolve, even though the caller
 // is a legitimate admin of the workspace in the URL. Permission was checked
 // against that workspace; the lookup has to agree.

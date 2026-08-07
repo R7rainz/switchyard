@@ -27,6 +27,28 @@ type Workflow struct {
 	UpdatedAt   time.Time
 }
 
+type Version struct {
+	ID          string
+	WorkspaceID string
+	WorkflowID  string
+	Number      int
+	Name        string
+	Description string
+	Graph       Graph
+	CreatedBy   string
+	CreatedAt   time.Time
+}
+
+type Template struct {
+	ID          string
+	WorkspaceID string
+	Name        string
+	Description string
+	Graph       Graph
+	CreatedBy   string
+	CreatedAt   time.Time
+}
+
 // Store is the persistence this package needs, declared here where it is
 // consumed so the rules can be tested without a database.
 //
@@ -54,6 +76,13 @@ type Store interface {
 
 	Update(ctx context.Context, w Workflow) error
 	Delete(ctx context.Context, workspaceID, id string) error
+
+	CreateVersion(ctx context.Context, version Version) error
+	ListVersions(ctx context.Context, workspaceID, workflowID string) ([]Version, error)
+	GetVersion(ctx context.Context, workspaceID, workflowID string, number int) (Version, error)
+	CreateTemplate(ctx context.Context, template Template) error
+	ListTemplates(ctx context.Context, workspaceID string) ([]Template, error)
+	GetTemplate(ctx context.Context, workspaceID, id string) (Template, error)
 }
 
 // Service holds the rules about what a workflow may look like. There is really
@@ -101,6 +130,13 @@ func (s *Service) Create(ctx context.Context, workspaceID, creatorID, name, desc
 		UpdatedAt:   now,
 	}
 	if err := s.store.Create(ctx, created); err != nil {
+		return Workflow{}, err
+	}
+	if err := s.store.CreateVersion(ctx, Version{
+		ID: randomID(), WorkspaceID: workspaceID, WorkflowID: created.ID, Number: 1,
+		Name: created.Name, Description: created.Description, Graph: created.Graph,
+		CreatedBy: creatorID, CreatedAt: now,
+	}); err != nil {
 		return Workflow{}, err
 	}
 	return created, nil
@@ -168,7 +204,80 @@ func (s *Service) Update(ctx context.Context, workspaceID, id string, patch Patc
 	if err := s.store.Update(ctx, stored); err != nil {
 		return Workflow{}, err
 	}
+	versions, err := s.store.ListVersions(ctx, workspaceID, id)
+	if err != nil {
+		return Workflow{}, err
+	}
+	number := 1
+	if len(versions) > 0 {
+		number = versions[len(versions)-1].Number + 1
+	}
+	if err := s.store.CreateVersion(ctx, Version{
+		ID: randomID(), WorkspaceID: workspaceID, WorkflowID: stored.ID, Number: number,
+		Name: stored.Name, Description: stored.Description, Graph: stored.Graph,
+		CreatedBy: stored.CreatedBy, CreatedAt: stored.UpdatedAt,
+	}); err != nil {
+		return Workflow{}, err
+	}
 	return stored, nil
+}
+
+func (s *Service) Duplicate(ctx context.Context, workspaceID, id, creatorID string) (Workflow, error) {
+	original, err := s.store.Get(ctx, workspaceID, id)
+	if err != nil {
+		return Workflow{}, err
+	}
+	name := original.Name + " copy"
+	if len(name) > maxNameLen {
+		name = name[:maxNameLen]
+	}
+	return s.Create(ctx, workspaceID, creatorID, name, original.Description, original.Graph)
+}
+
+func (s *Service) Versions(ctx context.Context, workspaceID, id string) ([]Version, error) {
+	if _, err := s.store.Get(ctx, workspaceID, id); err != nil {
+		return nil, err
+	}
+	return s.store.ListVersions(ctx, workspaceID, id)
+}
+
+func (s *Service) Restore(ctx context.Context, workspaceID, id string, number int) (Workflow, error) {
+	version, err := s.store.GetVersion(ctx, workspaceID, id, number)
+	if err != nil {
+		return Workflow{}, err
+	}
+	return s.Update(ctx, workspaceID, id, Patch{
+		Name: &version.Name, Description: &version.Description, Graph: &version.Graph,
+	})
+}
+
+func (s *Service) CreateTemplate(ctx context.Context, workspaceID, creatorID, name, description string, graph Graph) (Template, error) {
+	if workspaceID == "" {
+		return Template{}, errors.New("workflow: workspace is required")
+	}
+	name, err := checkName(name)
+	if err != nil {
+		return Template{}, err
+	}
+	if err := checkDescription(description); err != nil {
+		return Template{}, err
+	}
+	if err := graph.Validate(); err != nil {
+		return Template{}, err
+	}
+	template := Template{ID: s.newID(), WorkspaceID: workspaceID, Name: name, Description: description, Graph: graph, CreatedBy: creatorID, CreatedAt: s.now()}
+	if err := s.store.CreateTemplate(ctx, template); err != nil {
+		return Template{}, err
+	}
+	return template, nil
+}
+
+func (s *Service) Templates(ctx context.Context, workspaceID string) ([]Template, error) {
+	return s.store.ListTemplates(ctx, workspaceID)
+}
+
+func (s *Service) Template(ctx context.Context, workspaceID, id string) (Template, error) {
+	return s.store.GetTemplate(ctx, workspaceID, id)
 }
 
 func checkName(name string) (string, error) {

@@ -133,6 +133,108 @@ func (s *PostgresStore) Delete(ctx context.Context, workspaceID, id string) erro
 	return nil
 }
 
+func (s *PostgresStore) CreateVersion(ctx context.Context, version Version) error {
+	graph, err := json.Marshal(version.Graph)
+	if err != nil {
+		return fmt.Errorf("workflow: encoding version graph: %w", err)
+	}
+	_, err = s.pool.Exec(ctx,
+		`insert into "workflow_version"
+		   ("id", "workspaceId", "workflowId", "number", "name", "description", "graph", "createdBy", "createdAt")
+		 values ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		version.ID, version.WorkspaceID, version.WorkflowID, version.Number, version.Name,
+		version.Description, graph, nullString(version.CreatedBy), version.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("workflow: creating version: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListVersions(ctx context.Context, workspaceID, workflowID string) ([]Version, error) {
+	rows, err := s.pool.Query(ctx,
+		`select "id", "workspaceId", "workflowId", "number", "name", "description", "graph", "createdBy", "createdAt"
+		 from "workflow_version" where "workspaceId" = $1 and "workflowId" = $2 order by "number"`,
+		workspaceID, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: listing versions: %w", err)
+	}
+	defer rows.Close()
+	var versions []Version
+	for rows.Next() {
+		version, err := scanVersion(rows)
+		if err != nil {
+			return nil, fmt.Errorf("workflow: listing versions: %w", err)
+		}
+		versions = append(versions, version)
+	}
+	return versions, rows.Err()
+}
+
+func (s *PostgresStore) GetVersion(ctx context.Context, workspaceID, workflowID string, number int) (Version, error) {
+	row := s.pool.QueryRow(ctx,
+		`select "id", "workspaceId", "workflowId", "number", "name", "description", "graph", "createdBy", "createdAt"
+		 from "workflow_version" where "workspaceId" = $1 and "workflowId" = $2 and "number" = $3`,
+		workspaceID, workflowID, number)
+	version, err := scanVersion(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Version{}, ErrNotFound
+	}
+	if err != nil {
+		return Version{}, fmt.Errorf("workflow: loading version: %w", err)
+	}
+	return version, nil
+}
+
+func (s *PostgresStore) CreateTemplate(ctx context.Context, template Template) error {
+	graph, err := json.Marshal(template.Graph)
+	if err != nil {
+		return fmt.Errorf("workflow: encoding template graph: %w", err)
+	}
+	_, err = s.pool.Exec(ctx,
+		`insert into "workflow_template"
+		   ("id", "workspaceId", "name", "description", "graph", "createdBy", "createdAt")
+		 values ($1, $2, $3, $4, $5, $6, $7)`,
+		template.ID, template.WorkspaceID, template.Name, template.Description, graph,
+		nullString(template.CreatedBy), template.CreatedAt)
+	if err != nil {
+		return fmt.Errorf("workflow: creating template: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListTemplates(ctx context.Context, workspaceID string) ([]Template, error) {
+	rows, err := s.pool.Query(ctx,
+		`select "id", "workspaceId", "name", "description", "graph", "createdBy", "createdAt"
+		 from "workflow_template" where "workspaceId" = $1 order by "name"`, workspaceID)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: listing templates: %w", err)
+	}
+	defer rows.Close()
+	var templates []Template
+	for rows.Next() {
+		template, err := scanTemplate(rows)
+		if err != nil {
+			return nil, fmt.Errorf("workflow: listing templates: %w", err)
+		}
+		templates = append(templates, template)
+	}
+	return templates, rows.Err()
+}
+
+func (s *PostgresStore) GetTemplate(ctx context.Context, workspaceID, id string) (Template, error) {
+	row := s.pool.QueryRow(ctx,
+		`select "id", "workspaceId", "name", "description", "graph", "createdBy", "createdAt"
+		 from "workflow_template" where "workspaceId" = $1 and "id" = $2`, workspaceID, id)
+	template, err := scanTemplate(row)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return Template{}, ErrNotFound
+	}
+	if err != nil {
+		return Template{}, fmt.Errorf("workflow: loading template: %w", err)
+	}
+	return template, nil
+}
+
 const workflowColumns = `select "id", "workspaceId", "name", "description", "graph",
 	"createdBy", "createdAt", "updatedAt" from "workflow"`
 
@@ -155,6 +257,44 @@ func scanWorkflow(row pgx.Row) (Workflow, error) {
 		w.CreatedBy = *createdBy
 	}
 	return w, nil
+}
+
+func scanVersion(row pgx.Row) (Version, error) {
+	var (
+		version   Version
+		graph     []byte
+		createdBy *string
+	)
+	if err := row.Scan(&version.ID, &version.WorkspaceID, &version.WorkflowID, &version.Number,
+		&version.Name, &version.Description, &graph, &createdBy, &version.CreatedAt); err != nil {
+		return Version{}, err
+	}
+	if err := json.Unmarshal(graph, &version.Graph); err != nil {
+		return Version{}, fmt.Errorf("workflow: decoding version graph: %w", err)
+	}
+	if createdBy != nil {
+		version.CreatedBy = *createdBy
+	}
+	return version, nil
+}
+
+func scanTemplate(row pgx.Row) (Template, error) {
+	var (
+		template  Template
+		graph     []byte
+		createdBy *string
+	)
+	if err := row.Scan(&template.ID, &template.WorkspaceID, &template.Name, &template.Description,
+		&graph, &createdBy, &template.CreatedAt); err != nil {
+		return Template{}, err
+	}
+	if err := json.Unmarshal(graph, &template.Graph); err != nil {
+		return Template{}, fmt.Errorf("workflow: decoding template graph: %w", err)
+	}
+	if createdBy != nil {
+		template.CreatedBy = *createdBy
+	}
+	return template, nil
 }
 
 // The schema allows a null createdBy — the user may be gone — while the domain

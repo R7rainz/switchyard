@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -35,6 +36,25 @@ type workflowView struct {
 	UpdatedAt   time.Time      `json:"updatedAt"`
 }
 
+type versionView struct {
+	ID          string         `json:"id"`
+	Number      int            `json:"number"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Graph       workflow.Graph `json:"graph"`
+	CreatedBy   string         `json:"createdBy,omitempty"`
+	CreatedAt   time.Time      `json:"createdAt"`
+}
+
+type templateView struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Graph       workflow.Graph `json:"graph"`
+	CreatedBy   string         `json:"createdBy,omitempty"`
+	CreatedAt   time.Time      `json:"createdAt"`
+}
+
 func viewOf(w workflow.Workflow) workflowView {
 	return workflowView{
 		ID:          w.ID,
@@ -45,6 +65,16 @@ func viewOf(w workflow.Workflow) workflowView {
 		CreatedAt:   w.CreatedAt,
 		UpdatedAt:   w.UpdatedAt,
 	}
+}
+
+func versionOf(v workflow.Version) versionView {
+	return versionView{ID: v.ID, Number: v.Number, Name: v.Name, Description: v.Description,
+		Graph: v.Graph, CreatedBy: v.CreatedBy, CreatedAt: v.CreatedAt}
+}
+
+func templateOf(t workflow.Template) templateView {
+	return templateView{ID: t.ID, Name: t.Name, Description: t.Description, Graph: t.Graph,
+		CreatedBy: t.CreatedBy, CreatedAt: t.CreatedAt}
 }
 
 func (a *workflowAPI) listWorkflows(w http.ResponseWriter, r *http.Request) {
@@ -129,4 +159,116 @@ func (a *workflowAPI) deleteWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *workflowAPI) duplicateWorkflow(w http.ResponseWriter, r *http.Request) {
+	claims, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, r, auth.ErrNoIdentity)
+		return
+	}
+	created, err := a.workflows.Duplicate(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID"), claims.Subject)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, viewOf(created))
+}
+
+func (a *workflowAPI) listVersions(w http.ResponseWriter, r *http.Request) {
+	versions, err := a.workflows.Versions(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	views := make([]versionView, 0, len(versions))
+	for _, version := range versions {
+		views = append(views, versionOf(version))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"versions": views})
+}
+
+func (a *workflowAPI) restoreVersion(w http.ResponseWriter, r *http.Request) {
+	number, err := strconv.Atoi(chi.URLParam(r, "version"))
+	if err != nil || number < 1 {
+		writeError(w, r, invalid("version must be a positive number"))
+		return
+	}
+	updated, err := a.workflows.Restore(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "workflowID"), number)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, viewOf(updated))
+}
+
+func (a *workflowAPI) listTemplates(w http.ResponseWriter, r *http.Request) {
+	templates, err := a.workflows.Templates(r.Context(), chi.URLParam(r, "workspaceID"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	views := make([]templateView, 0, len(templates))
+	for _, template := range templates {
+		views = append(views, templateOf(template))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"templates": views})
+}
+
+func (a *workflowAPI) createTemplate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string         `json:"name"`
+		Description string         `json:"description"`
+		Graph       workflow.Graph `json:"graph"`
+	}
+	if err := decodeJSONLimit(r, &body, maxGraphBytes); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	claims, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, r, auth.ErrNoIdentity)
+		return
+	}
+	template, err := a.workflows.CreateTemplate(r.Context(), chi.URLParam(r, "workspaceID"), claims.Subject,
+		body.Name, body.Description, body.Graph)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, templateOf(template))
+}
+
+func (a *workflowAPI) createFromTemplate(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	if err := decodeJSONLimit(r, &body, 8<<10); err != nil {
+		writeError(w, r, err)
+		return
+	}
+	claims, ok := auth.FromContext(r.Context())
+	if !ok {
+		writeError(w, r, auth.ErrNoIdentity)
+		return
+	}
+	template, err := a.workflows.Template(r.Context(), chi.URLParam(r, "workspaceID"), chi.URLParam(r, "templateID"))
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	name, description := template.Name, template.Description
+	if body.Name != "" {
+		name = body.Name
+	}
+	if body.Description != "" {
+		description = body.Description
+	}
+	created, err := a.workflows.Create(r.Context(), chi.URLParam(r, "workspaceID"), claims.Subject, name, description, template.Graph)
+	if err != nil {
+		writeError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusCreated, viewOf(created))
 }
