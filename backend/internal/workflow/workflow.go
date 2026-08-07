@@ -146,6 +146,30 @@ func (s *Service) Get(ctx context.Context, workspaceID, id string) (Workflow, er
 	return s.store.Get(ctx, workspaceID, id)
 }
 
+// FindByID resolves the opaque id used by public webhook URLs. Workflow ids
+// are generated with crypto/rand, so the id itself is the public token; the
+// workspace remains on the returned row for credential and execution scoping.
+// The workspace-scoped Get method remains the default for authenticated API
+// calls, where the caller already supplied the workspace.
+func (s *Service) FindByID(ctx context.Context, id string) (Workflow, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Workflow{}, ErrNotFound
+	}
+	// ponytail: scan the existing workflow store; add an indexed public-token
+	// column if webhook volume makes this lookup measurable.
+	workflows, err := s.store.ListAll(ctx)
+	if err != nil {
+		return Workflow{}, err
+	}
+	for _, one := range workflows {
+		if one.ID == id {
+			return one, nil
+		}
+	}
+	return Workflow{}, ErrNotFound
+}
+
 func (s *Service) List(ctx context.Context, workspaceID string) ([]Workflow, error) {
 	return s.store.List(ctx, workspaceID)
 }
