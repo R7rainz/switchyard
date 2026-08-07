@@ -11,7 +11,7 @@ import {
   ErrorNote,
   Eyebrow,
 } from "@/components/ui";
-import { apiError, githubWebhookURL, type Graph } from "@/lib/api";
+import { apiError, genericWebhookURL, githubWebhookURL, type Graph } from "@/lib/api";
 import { useCreateWorkflow, useWorkspace } from "@/lib/queries";
 
 const githubTestGraph: Graph = {
@@ -120,6 +120,20 @@ export default function DocsPage() {
             <StatusRow code="404" text="Wrong IDs or the workflow has no GitHub trigger." />
             <StatusRow code="503" text="github/webhook is missing in this workspace." />
           </div>
+        </Card>
+
+        <Card>
+          <Eyebrow>Generic inbound webhooks</Eyebrow>
+          <p className="mt-3 text-body-sm leading-relaxed text-ash">
+            For a workflow with a Webhook trigger, copy the short URL from its builder and send a
+            JSON or text POST. Save the request secret as <code>webhook/default</code> in Settings
+            and sign the exact request body with HMAC-SHA256.
+          </p>
+          <CodeBlock>{genericWebhookURL("WORKFLOW_ID")}</CodeBlock>
+          <p className="mt-3 text-caption leading-relaxed text-ash">
+            Send the hexadecimal digest as <code>X-Switchyard-Signature-256: sha256=&lt;digest&gt;</code>.
+            Add <code>X-Webhook-Delivery</code> for idempotent redelivery handling.
+          </p>
         </Card>
 
         <p className="text-body-sm text-ash">
