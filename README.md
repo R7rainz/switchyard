@@ -146,4 +146,5 @@ supports an allowed transport.
 ```bash
 cd backend && go test ./... && go vet ./...
 cd frontend && pnpm lint && pnpm build
+
 ```
