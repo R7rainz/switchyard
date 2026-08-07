@@ -62,8 +62,9 @@ Below execution:
   output.
 - **AI service** — prompt building, provider selection, model selection,
   response handling.
-- **Integration service** — GitHub, Slack, Discord, generic HTTP.
-- **Notification service** — WebSocket fan-out and events (email is future).
+- **Integration service** — GitHub, Slack, Discord, Email, generic HTTP, and
+  inbound webhooks.
+- **Notification service** — WebSocket fan-out and events.
 - **Execution logs** — live logs, audit trail, metrics.
 
 PostgreSQL tables: users, workflows, versions, executions, logs, credentials,
@@ -137,7 +138,8 @@ interface, same as the rest.
   useless to an honest client, whose only move either way is to get a new one.
 - `backend/internal/config/config.go` — the only reader of env vars:
   `SWITCHYARD_ADDR`, `SWITCHYARD_AUTH_ISSUER`, `SWITCHYARD_AUTH_AUDIENCE`,
-  `SWITCHYARD_ENV`, `SWITCHYARD_LOG_LEVEL`. A
+  `SWITCHYARD_ENV`, `SWITCHYARD_LOG_LEVEL`, `SWITCHYARD_ARTIFACT_DIR`, and
+  optional OAuth provider/callback settings. A
   non-absolute issuer is a startup error, since it would otherwise surface as
   every token looking invalid.
 
@@ -431,11 +433,9 @@ node type needs — and is only checked for being well-formed JSON. This package
 does not know what an AI node requires, and keeping it opaque means an
 unrecognised field survives a save/load round trip.
 
-**No `workflow_version` table, deliberately.** Determinism is what would demand
-one, and pinning the graph on the execution row satisfies that completely —
-an execution keeps what it ran, so a later edit cannot change what it appears
-to have done. History and rollback are a product feature and an additive
-migration when they are wanted.
+**`workflow_version` is additive to execution snapshots.** The snapshot still
+guarantees that a finished run cannot change, while the version table records
+editable workflow history for rollback and audit.
 
 **Update is read-modify-write with no locking**: two people editing one workflow
 means the later save wins. The fix, when that stops being acceptable, is a
@@ -485,8 +485,8 @@ was accepted — plus a `runTimeout` of its own.
 
 **The graph is copied onto the execution row.** That snapshot is what makes a
 finished run mean something: editing the workflow afterwards cannot change what
-this run appears to have done. **It is also why there is no `workflow_version`
-table** — the snapshot answers the question versioning would have been asked.
+this run appears to have done. Workflow history is separate in
+`workflow_version`; the two answer different questions.
 
 **`Runnable` is checked at `Start`, not at save.** This is where the draft/run
 split from `workflow` pays off: a half-built canvas saves all day, and starting

@@ -20,33 +20,35 @@ system of record and external integrations behind backend services.
 - Manual, scheduled, GitHub pull-request webhook, and workflow webhook trigger
   primitives.
 - Working nodes for conditions, variables, HTTP requests, AI prompts, GitHub
-  pull-request reads, Slack messages, Switch, Delay, Chat, Summarize,
-  Classification, and Decision.
+  pull-request reads, issue creation, comments, merges, Slack, Discord, Email,
+  Switch, Delay, Chat, Summarize, Classification, and Decision.
 - Dashboard, workflow builder, run viewer, settings, invite flows, and landing
   page surfaces.
 
-### Planned V1 work still pending
+### Planned V1 work completed
 
-- A public generic inbound-webhook route; GitHub webhooks are implemented today.
-- GitHub issue, comment, and merge nodes; Discord and Email integrations.
-- Workflow duplication, version history/rollback, and a template library.
-- OAuth credential flows and artifact/S3 storage.
+- Public generic inbound webhooks alongside signed GitHub webhooks.
+- GitHub issue, comment, and merge nodes, plus Discord and Email integrations.
+- Workflow duplication, version history/rollback, and reusable templates.
+- Signed OAuth authorization-code flows storing encrypted provider tokens, plus
+  local artifact upload/download/delete APIs.
 
-Execution graph snapshots are an intentional replacement for a separate
-`workflow_version` table: every run retains exactly what it executed.
+Execution graph snapshots still retain exactly what each run executed;
+`workflow_version` now separately records editable workflow history.
 
 ## Remaining V1 TODO
 
-- [ ] Add a public generic inbound-webhook route.
+- [x] Add a public generic inbound-webhook route.
 - [x] Add dedicated `Switch` and `Delay` nodes plus `Chat`, `Summarize`,
   `Classification`, and `Decision` AI nodes.
-- [ ] Add GitHub issue, comment, and merge nodes, plus Discord and Email
+- [x] Add GitHub issue, comment, and merge nodes, plus Discord and Email
   integrations.
-- [ ] Add workflow duplication, version history/rollback, and a template
+- [x] Add workflow duplication, version history/rollback, and a template
   library.
 - [x] Add native OpenAI, Anthropic, and Gemini providers behind the shared AI
   interface.
-- [ ] Add OAuth credential flows and artifact/S3 storage.
+- [x] Add OAuth credential flows and local artifact storage. S3 is the next
+  storage backend, explicitly deferred by the V1 storage decision.
 
 ### Extra improvements added to V1
 
