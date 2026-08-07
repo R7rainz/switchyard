@@ -483,3 +483,4 @@ export const credentials = {
 export const AI_CREDENTIAL = { provider: "openrouter", name: "default" } as const;
 export const AI_PROVIDERS = ["openrouter", "openai", "anthropic", "gemini"] as const;
 export type AIProvider = (typeof AI_PROVIDERS)[number];
+export const CREDENTIAL_PROVIDERS = [...AI_PROVIDERS, "github"] as const;

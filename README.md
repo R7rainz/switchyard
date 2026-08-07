@@ -1,5 +1,6 @@
 # Switchyard
 
+
 Switchyard is an AI-powered workflow automation platform for software teams.
 Describe an engineering workflow in natural language, get an editable visual
 graph, review it, and then execute it deterministically with visible logs.

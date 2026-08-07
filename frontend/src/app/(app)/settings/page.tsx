@@ -14,7 +14,14 @@ import {
   Input,
   Skeleton,
 } from "@/components/ui";
-import { AI_CREDENTIAL, AI_PROVIDERS, apiError, roles, type Role } from "@/lib/api";
+import {
+  AI_CREDENTIAL,
+  AI_PROVIDERS,
+  CREDENTIAL_PROVIDERS,
+  apiError,
+  roles,
+  type Role,
+} from "@/lib/api";
 import {
   useCreateInvite,
   useCredentials,
@@ -106,7 +113,7 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
                 className="h-12 rounded-xl border border-hairline bg-canvas-white px-4 text-body-sm text-ink focus:border-ink/25 focus:outline-none"
                 required
               >
-                {AI_PROVIDERS.map((option) => (
+                {CREDENTIAL_PROVIDERS.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
@@ -117,7 +124,7 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
               <Input value={name} onChange={(e) => setName(e.target.value)} required />
             </Field>
           </div>
-          <Field label="Secret" hint="Stored encrypted. It cannot be read back afterwards.">
+          <Field label="Secret" hint={credentialHint(provider, name)}>
             <Input
               type="password"
               value={secret}
@@ -163,6 +170,16 @@ function Keys({ workspaceId }: { workspaceId: string | undefined }) {
       )}
     </section>
   );
+}
+
+function credentialHint(provider: string, name: string) {
+  if (provider === "github" && name === "webhook") {
+    return "Use the same value in the GitHub repository webhook Secret field.";
+  }
+  if (provider === "github" && name === "default") {
+    return "GitHub personal access token used by pull-request, issue, comment, and merge nodes.";
+  }
+  return "Stored encrypted. It cannot be read back afterwards.";
 }
 
 function Members({ workspaceId }: { workspaceId: string | undefined }) {
