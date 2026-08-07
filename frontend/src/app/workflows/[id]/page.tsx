@@ -170,10 +170,6 @@ function Builder({
         <SaveState saving={saving} error={saveError} dirty={dirty} />
         {lastRun && <RunStatus status={lastRun.status} />}
 
-        {(start.error || cancel.error) && (
-          <div className="hidden min-w-0 max-w-xs sm:block"><ErrorNote>{apiError(start.error ?? cancel.error)}</ErrorNote></div>
-        )}
-
         {githubTriggered && (
           <Button
             variant="neutral"
@@ -248,6 +244,10 @@ function Builder({
           Run
         </Button>
       </header>
+
+      {(start.error || cancel.error) && (
+        <div className="border-b border-hairline px-4 py-2"><ErrorNote>{apiError(start.error ?? cancel.error)}</ErrorNote></div>
+      )}
 
       <RunProvider workspaceId={workspaceId} executionId={runId}>
       <div className="flex min-h-0 flex-1">
@@ -479,6 +479,7 @@ function useAutosave(workspaceId: string, id: string, graph: Graph) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const writingRef = useRef(false);
   const flushRef = useRef<() => Promise<void>>(async () => undefined);
+  const failedRef = useRef<string | null>(null);
 
   useEffect(() => {
     latestRef.current = serialised;
@@ -493,15 +494,17 @@ function useAutosave(workspaceId: string, id: string, graph: Graph) {
       try {
         await workflows.update(workspaceId, id, { graph: JSON.parse(target) as Graph });
         savedRef.current = target;
+        failedRef.current = null;
         setSaveError(null);
         setDirty(savedRef.current !== latestRef.current);
       } catch (cause) {
+        failedRef.current = target;
         setSaveError(apiError(cause));
         setDirty(true);
       } finally {
         writingRef.current = false;
         setSaving(false);
-        if (savedRef.current !== latestRef.current) {
+        if (savedRef.current !== latestRef.current && failedRef.current !== latestRef.current) {
           timerRef.current = setTimeout(() => void flushRef.current(), 700);
         }
       }
@@ -515,6 +518,7 @@ function useAutosave(workspaceId: string, id: string, graph: Graph) {
     }
     if (savedRef.current === serialised) return;
 
+    if (failedRef.current !== serialised) failedRef.current = null;
     setDirty(true);
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => void flushRef.current(), 700);
