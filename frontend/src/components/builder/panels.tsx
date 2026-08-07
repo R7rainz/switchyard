@@ -1,9 +1,10 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
+import { Search, Trash2 } from "lucide-react";
+import { createElement, useMemo, useState } from "react";
 
 import type { WorkflowNode } from "@/lib/api";
-import { paletteFor } from "@/lib/categories";
+import { iconFor, paletteFor } from "@/lib/categories";
 import { nodeSpecs, specFor } from "@/lib/node-types";
 import { Button, Eyebrow, Input, Textarea, cx } from "@/components/ui";
 import { RunStatus } from "@/components/run-status";
@@ -11,29 +12,34 @@ import { useNodeResult } from "./run-state";
 
 /** The list of node types you can add, grouped nowhere. */
 export function Palette({ onAdd }: { onAdd: (type: string) => void }) {
+  const [search, setSearch] = useState("");
+  const filtered = useMemo(
+    () => nodeSpecs.filter((spec) => `${spec.label} ${spec.summary} ${spec.type}`.toLowerCase().includes(search.toLowerCase())),
+    [search],
+  );
+  const groups = [...new Set(filtered.map((spec) => paletteFor(spec.type).label))];
   return (
-    <aside className="flex w-56 shrink-0 flex-col gap-2 overflow-y-auto border-r border-hairline bg-canvas-white p-4">
-      <Eyebrow className="mb-1">Add a node</Eyebrow>
-      {nodeSpecs.map((spec) => {
-        const palette = paletteFor(spec.type);
-        return (
-          <button
-            key={spec.type}
-            onClick={() => onAdd(spec.type)}
-            className="flex items-center gap-2.5 rounded-lg border border-hairline px-3 py-2 text-left hover:bg-pearl"
-          >
-            <span
-              aria-hidden
-              className="size-3 shrink-0 rounded-sm"
-              style={{ background: palette.hex }}
-            />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-body-sm text-ink">{spec.label}</span>
-              <span className="block truncate text-[10px] text-ash">{spec.type}</span>
-            </span>
-          </button>
-        );
-      })}
+    <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline bg-canvas-white p-4">
+      <div className="flex items-center justify-between"><Eyebrow>Add a node</Eyebrow><span className="text-[10px] text-stone">{filtered.length}</span></div>
+      <label className="relative">
+        <Search size={14} className="pointer-events-none absolute left-3 top-3 text-stone" />
+        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes" className="h-10 w-full rounded-lg border border-hairline bg-cream-wash pl-9 pr-3 text-body-sm text-ink outline-none placeholder:text-stone focus:border-ink/25" />
+      </label>
+      {groups.map((group) => (
+        <div key={group} className="flex flex-col gap-1.5">
+          <Eyebrow className="px-1 pt-1">{group}</Eyebrow>
+          {filtered.filter((spec) => paletteFor(spec.type).label === group).map((spec) => {
+            const palette = paletteFor(spec.type);
+            return (
+              <button key={spec.type} onClick={() => onAdd(spec.type)} title={spec.summary} className="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-hairline hover:bg-pearl">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ background: `${palette.hex}99` }}>{createElement(iconFor(spec.type), { size: 15, strokeWidth: 1.8 })}</span>
+                <span className="min-w-0 flex-1"><span className="block truncate text-body-sm text-ink">{spec.label}</span><span className="block truncate text-[10px] text-ash">{spec.summary}</span></span>
+              </button>
+            );
+          })}
+        </div>
+      ))}
+      {filtered.length === 0 && <p className="px-1 py-3 text-caption text-ash">No nodes match that search.</p>}
     </aside>
   );
 }
@@ -88,6 +94,8 @@ export function Inspector({
         </button>
       </div>
 
+      {spec?.summary && <p className="rounded-lg bg-cream-wash p-3 text-caption leading-relaxed text-ash">{spec.summary}</p>}
+
       <NodeResult nodeId={node.id} />
 
       <label className="flex flex-col gap-2">
@@ -99,6 +107,7 @@ export function Inspector({
         />
       </label>
 
+      {spec?.fields.length ? <Eyebrow>Configuration</Eyebrow> : null}
       {spec?.fields.map((field) => (
         <label key={field.key} className="flex flex-col gap-2">
           <Eyebrow>{field.label}</Eyebrow>
