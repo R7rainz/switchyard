@@ -93,8 +93,9 @@ export default function DocsPage() {
         <Card>
           <Eyebrow>2 · Add the repository webhook</Eyebrow>
           <p className="mt-3 text-body-sm leading-relaxed text-ash">
-            In GitHub, open Repository Settings → Webhooks → Add webhook. Use the Render backend,
-            not the Vercel frontend:
+            In GitHub, open Repository Settings → Webhooks → Add webhook. Use the Switchyard API
+            URL shown below, not the browser app URL. The builder&apos;s Copy webhook URL button
+            provides the workflow-specific value automatically.
           </p>
           <CodeBlock>{githubWebhookURL("WORKFLOW_ID")}</CodeBlock>
           <ol className="mt-4 list-decimal space-y-2 pl-5 text-body-sm text-ash">
