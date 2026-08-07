@@ -48,6 +48,21 @@ type Config struct {
 
 	// LogLevel is the minimum level that reaches the log.
 	LogLevel zerolog.Level
+
+	// OAuth is optional in local development. Providers are enabled only when
+	// all of their required environment values are present.
+	OAuthProviders   map[string]OAuthProvider
+	OAuthStateKey    []byte
+	OAuthCallbackURL string
+	ArtifactDir      string
+}
+
+type OAuthProvider struct {
+	ClientID     string
+	ClientSecret string
+	AuthURL      string
+	TokenURL     string
+	Scope        string
 }
 
 // AuthJWKSURL is where the issuer publishes its public keys.
@@ -97,6 +112,20 @@ func Load() (Config, error) {
 	}
 	cfg.CredentialKeys = keys
 	cfg.CredentialKeyVersion = current
+	providers, err := oauthProviders()
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.OAuthProviders = providers
+	if raw := os.Getenv("SWITCHYARD_OAUTH_STATE_KEY"); raw != "" {
+		key, err := base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(key) < 32 {
+			return Config{}, fmt.Errorf("config: SWITCHYARD_OAUTH_STATE_KEY must be base64 for at least 32 bytes")
+		}
+		cfg.OAuthStateKey = key
+	}
+	cfg.OAuthCallbackURL = envOr("SWITCHYARD_OAUTH_CALLBACK_URL", "http://localhost:8090/api/v1/oauth/callback")
+	cfg.ArtifactDir = envOr("SWITCHYARD_ARTIFACT_DIR", "./data/artifacts")
 
 	level, err := zerolog.ParseLevel(envOr("SWITCHYARD_LOG_LEVEL", "info"))
 	if err != nil {
@@ -185,4 +214,24 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func oauthProviders() (map[string]OAuthProvider, error) {
+	providers := make(map[string]OAuthProvider)
+	for _, name := range []string{"github", "google", "discord"} {
+		prefix := "SWITCHYARD_OAUTH_" + strings.ToUpper(name) + "_"
+		provider := OAuthProvider{
+			ClientID: os.Getenv(prefix + "CLIENT_ID"), ClientSecret: os.Getenv(prefix + "CLIENT_SECRET"),
+			AuthURL: os.Getenv(prefix + "AUTH_URL"), TokenURL: os.Getenv(prefix + "TOKEN_URL"), Scope: os.Getenv(prefix + "SCOPE"),
+		}
+		present := provider.ClientID != "" || provider.ClientSecret != "" || provider.AuthURL != "" || provider.TokenURL != ""
+		if !present {
+			continue
+		}
+		if provider.ClientID == "" || provider.ClientSecret == "" || provider.AuthURL == "" || provider.TokenURL == "" {
+			return nil, fmt.Errorf("config: %s provider needs CLIENT_ID, CLIENT_SECRET, AUTH_URL, and TOKEN_URL", name)
+		}
+		providers[name] = provider
+	}
+	return providers, nil
 }

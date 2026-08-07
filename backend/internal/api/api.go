@@ -14,9 +14,11 @@ import (
 
 	"github.com/R7rainz/switchyard/backend/internal/ai"
 	"github.com/R7rainz/switchyard/backend/internal/aifeedback"
+	"github.com/R7rainz/switchyard/backend/internal/artifact"
 	"github.com/R7rainz/switchyard/backend/internal/auth"
 	"github.com/R7rainz/switchyard/backend/internal/credential"
 	"github.com/R7rainz/switchyard/backend/internal/execution"
+	"github.com/R7rainz/switchyard/backend/internal/oauth"
 	"github.com/R7rainz/switchyard/backend/internal/workflow"
 	"github.com/R7rainz/switchyard/backend/internal/workspace"
 )
@@ -41,6 +43,8 @@ type Deps struct {
 	Executions  *execution.Service
 	AI          *ai.Service
 	Feedback    *aifeedback.Service
+	OAuth       *oauth.Service
+	Artifacts   artifact.Store
 
 	// Events is the WebSocket hub. Absent means the streaming route answers
 	// 501 rather than panicking, which is what a test router wants.
@@ -54,6 +58,9 @@ type Deps struct {
 	// AppURL is the frontend's base URL, which is where an invite link has to
 	// point: the invitee needs a page, not this API.
 	AppURL string
+
+	// OAuthCallbackURL is the backend callback base registered with providers.
+	OAuthCallbackURL string
 }
 
 // NewRouter builds the HTTP surface. Routing, encoding, and auth enforcement
@@ -85,12 +92,18 @@ func NewRouter(deps Deps) http.Handler {
 	flows := &workflowAPI{workflows: deps.Workflows}
 	runs := &executionAPI{executions: deps.Executions, events: deps.Events}
 	assist := &aiAPI{ai: deps.AI, feedback: deps.Feedback}
+	oauthHandlers := &oauthAPI{service: deps.OAuth, callbackURL: deps.OAuthCallbackURL, appURL: appURL}
+	artifacts := &artifactAPI{store: deps.Artifacts}
 	githubHooks := &githubWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
+	genericHooks := &genericWebhookAPI{workflows: deps.Workflows, executions: deps.Executions, credentials: deps.Credentials}
 	// Webhooks authenticate with their provider signature rather than a user
 	// JWT, so they stay outside the protected API group. Keep the old path for
 	// existing GitHub installations while exposing the versioned contract.
 	router.Post("/api/v1/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
 	router.Post("/hooks/github/{workspaceID}/{workflowID}", githubHooks.receive)
+	router.Post("/api/v1/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
+	router.Post("/hooks/webhook/{workspaceID}/{workflowID}", genericHooks.receive)
+	router.Get("/api/v1/oauth/callback/{provider}", oauthHandlers.callback)
 
 	// V1 is the canonical public API path. Keep /api as an alias while clients
 	// migrate; versioning the path lets future breaking changes ship beside
@@ -127,6 +140,7 @@ func NewRouter(deps Deps) http.Handler {
 			r.With(keys).Get("/credentials", creds.listCredentials)
 			r.With(keys).Put("/credentials/{provider}/{name}", creds.putCredential)
 			r.With(keys).Delete("/credentials/{provider}/{name}", creds.deleteCredential)
+			r.With(keys).Get("/oauth/{provider}/start", oauthHandlers.start)
 
 			// Delete is its own permission rather than folded into write: a
 			// member may edit a workflow they did not draw, and deleting one is
@@ -140,6 +154,16 @@ func NewRouter(deps Deps) http.Handler {
 			r.With(readFlows).Get("/workflows/{workflowID}", flows.getWorkflow)
 			r.With(writeFlows).Patch("/workflows/{workflowID}", flows.updateWorkflow)
 			r.With(dropFlows).Delete("/workflows/{workflowID}", flows.deleteWorkflow)
+			r.With(writeFlows).Post("/workflows/{workflowID}/duplicate", flows.duplicateWorkflow)
+			r.With(readFlows).Get("/workflows/{workflowID}/versions", flows.listVersions)
+			r.With(writeFlows).Post("/workflows/{workflowID}/versions/{version}/restore", flows.restoreVersion)
+
+			r.With(readFlows).Get("/templates", flows.listTemplates)
+			r.With(writeFlows).Post("/templates", flows.createTemplate)
+			r.With(writeFlows).Post("/templates/{templateID}/workflows", flows.createFromTemplate)
+			r.With(readFlows).Get("/artifacts/{artifactID}", artifacts.download)
+			r.With(writeFlows).Post("/artifacts", artifacts.upload)
+			r.With(writeFlows).Delete("/artifacts/{artifactID}", artifacts.remove)
 
 			// Generating stores nothing — it returns a graph for the canvas,
 			// because the user reviews and edits before anything exists. It
