@@ -194,6 +194,7 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
   const { data: allRuns } = useExecutions(workspaceId);
   const lastRun = allRuns?.find((run) => run.workflowId === workflow.id);
   const runnable = workflow.graph.nodes.length > 0;
+  const githubTriggered = workflow.graph.nodes.some((node) => node.type === "trigger.github.pull_request");
 
   // Which node families this workflow uses, in first-seen order, deduped.
   const families = [...new Map(
@@ -275,10 +276,16 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
           <Button
             variant="neutral"
             className="ml-auto h-8 px-3"
-            // An empty draft has no trigger, so the engine would reject it at
-            // Start. Saying so here beats a 400 the user has to interpret.
-            title={runnable ? undefined : "Add a trigger before running this"}
-            disabled={!runnable || start.isPending}
+            // GitHub-triggered graphs need the signed payload that only GitHub
+            // can provide; a manual start would fail every .trigger reference.
+            title={
+              githubTriggered
+                ? "This workflow runs from a GitHub pull-request webhook"
+                : runnable
+                  ? undefined
+                  : "Add a trigger before running this"
+            }
+            disabled={!runnable || githubTriggered || start.isPending}
             onClick={() => start.mutate(workflow.id)}
           >
             <Play size={13} strokeWidth={2} />
