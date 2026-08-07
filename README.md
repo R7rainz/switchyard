@@ -114,6 +114,33 @@ artifact files default to `./data/artifacts` (override with
 `SWITCHYARD_ARTIFACT_DIR`). See [`CLAUDE.md`](CLAUDE.md) for the complete
 architecture and configuration decisions.
 
+## Free deployment layout
+
+For a test deployment, use Vercel for the Next.js app, Render for the Go API,
+and Neon for PostgreSQL. Import `render.yaml` when creating the Render web
+service; it sets the backend build command and `/healthz` health check.
+
+Set these values in Vercel:
+
+- `DATABASE_URL` — the Neon connection string
+- `BETTER_AUTH_SECRET` — a new random secret
+- `BETTER_AUTH_URL` — the deployed Vercel URL
+- `NEXT_PUBLIC_API_URL` — the deployed Render API URL
+
+Set these values in Render:
+
+- `DATABASE_URL` — the same Neon connection string
+- `SWITCHYARD_CREDENTIAL_KEY` — a versioned base64 AES-256 key
+- `SWITCHYARD_AUTH_ISSUER` — the same deployed Vercel URL
+- `SWITCHYARD_AUTH_AUDIENCE=switchyard-backend`
+- `SWITCHYARD_ENV=production`
+
+Render's free service sleeps when idle and has an ephemeral filesystem, so
+local artifacts are suitable for testing only. Configure object storage before
+depending on uploaded artifacts. Its free web services also cannot send SMTP
+traffic, so the Email node needs a paid backend or an external mail relay that
+supports an allowed transport.
+
 ## Verification
 
 ```bash

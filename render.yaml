@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: switchyard-api
+    runtime: go
+    rootDir: backend
+    buildCommand: go build -tags netgo -ldflags '-s -w' -o app ./cmd/switchyard
+    startCommand: ./app
+    healthCheckPath: /healthz
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SWITCHYARD_CREDENTIAL_KEY
+        sync: false
+      - key: SWITCHYARD_AUTH_ISSUER
+        sync: false
+      - key: SWITCHYARD_AUTH_AUDIENCE
+        value: switchyard-backend
+      - key: SWITCHYARD_ENV
+        value: production
+      - key: SWITCHYARD_LOG_LEVEL
+        value: info
+      - key: SWITCHYARD_ARTIFACT_DIR
+        value: ./data/artifacts
