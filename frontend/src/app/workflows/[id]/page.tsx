@@ -28,6 +28,7 @@ import { Modal } from "@/components/modal";
 import { Button, ErrorNote, Skeleton, Wordmark } from "@/components/ui";
 import {
   apiError,
+  genericWebhookURL,
   githubWebhookURL,
   workflows,
   type Graph,
@@ -104,6 +105,7 @@ function Builder({
   const { data: runs } = useExecutions(workspaceId);
   const lastRun = runs?.find((run) => run.workflowId === id);
   const githubTriggered = nodes.some((node) => node.type === "trigger.github.pull_request");
+  const webhookTriggered = nodes.some((node) => node.type === "trigger.webhook");
 
   // The run this canvas is watching. Set when Run is pressed, and picked up
   // from the newest run on load so reopening a workflow mid-run shows it.
@@ -168,6 +170,10 @@ function Builder({
         <SaveState saving={saving} error={saveError} dirty={dirty} />
         {lastRun && <RunStatus status={lastRun.status} />}
 
+        {(start.error || cancel.error) && (
+          <div className="hidden min-w-0 max-w-xs sm:block"><ErrorNote>{apiError(start.error ?? cancel.error)}</ErrorNote></div>
+        )}
+
         {githubTriggered && (
           <Button
             variant="neutral"
@@ -178,6 +184,20 @@ function Builder({
                 .writeText(githubWebhookURL(id))
                 .then(() => setWebhookCopied(true))
                 .catch(() => setWebhookCopied(false));
+            }}
+          >
+            <Copy size={14} strokeWidth={1.75} />
+            <span className="hidden sm:inline">{webhookCopied ? "Copied" : "Copy webhook URL"}</span>
+          </Button>
+        )}
+
+        {webhookTriggered && (
+          <Button
+            variant="neutral"
+            className="h-9"
+            title={genericWebhookURL(id)}
+            onClick={() => {
+              void navigator.clipboard.writeText(genericWebhookURL(id)).then(() => setWebhookCopied(true)).catch(() => setWebhookCopied(false));
             }}
           >
             <Copy size={14} strokeWidth={1.75} />
@@ -448,14 +468,45 @@ function toGraph(nodes: Node[], edges: Edge[]): Graph {
  * Debounced because dragging a node fires a change per frame.
  */
 function useAutosave(workspaceId: string, id: string, graph: Graph) {
+  const serialised = JSON.stringify(graph);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   // What the server last accepted, as text. Comparing against it is what stops
   // a re-render with identical content from writing again.
   const savedRef = useRef<string | null>(null);
+  const latestRef = useRef(serialised);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const writingRef = useRef(false);
+  const flushRef = useRef<() => Promise<void>>(async () => undefined);
 
-  const serialised = JSON.stringify(graph);
+  useEffect(() => {
+    latestRef.current = serialised;
+  }, [serialised]);
+
+  useEffect(() => {
+    flushRef.current = async () => {
+      if (writingRef.current || savedRef.current === latestRef.current) return;
+      writingRef.current = true;
+      const target = latestRef.current;
+      setSaving(true);
+      try {
+        await workflows.update(workspaceId, id, { graph: JSON.parse(target) as Graph });
+        savedRef.current = target;
+        setSaveError(null);
+        setDirty(savedRef.current !== latestRef.current);
+      } catch (cause) {
+        setSaveError(apiError(cause));
+        setDirty(true);
+      } finally {
+        writingRef.current = false;
+        setSaving(false);
+        if (savedRef.current !== latestRef.current) {
+          timerRef.current = setTimeout(() => void flushRef.current(), 700);
+        }
+      }
+    };
+  }, [id, workspaceId]);
 
   useEffect(() => {
     if (savedRef.current === null) {
@@ -465,24 +516,13 @@ function useAutosave(workspaceId: string, id: string, graph: Graph) {
     if (savedRef.current === serialised) return;
 
     setDirty(true);
-    const timer = setTimeout(async () => {
-      setSaving(true);
-      try {
-        await workflows.update(workspaceId, id, { graph: JSON.parse(serialised) as Graph });
-        savedRef.current = serialised;
-        setDirty(false);
-        setSaveError(null);
-      } catch (cause) {
-        // Left dirty on purpose: the next edit retries, and the indicator keeps
-        // saying so rather than claiming a save that did not happen.
-        setSaveError(apiError(cause));
-      } finally {
-        setSaving(false);
-      }
-    }, 700);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => void flushRef.current(), 700);
 
-    return () => clearTimeout(timer);
-  }, [serialised, workspaceId, id]);
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, [serialised]);
 
   return { saving, saveError, dirty };
 }

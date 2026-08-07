@@ -16,6 +16,10 @@ export function githubWebhookURL(workflowId: string) {
   return `${API_URL.replace(/\/$/, "")}${API_PATH}/hooks/github/${workflowId}`;
 }
 
+export function genericWebhookURL(workflowId: string) {
+  return `${API_URL.replace(/\/$/, "")}${API_PATH}/hooks/webhook/${workflowId}`;
+}
+
 /**
  * The client every call to the Go backend goes through.
  *
@@ -63,6 +67,18 @@ export type Workspace = {
   slug: string;
   createdAt: string;
 };
+
+const selectedWorkspaceStorageKey = "switchyard:selected-workspace";
+
+export function selectWorkspace(workspaceId: string) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(selectedWorkspaceStorageKey, workspaceId);
+  window.dispatchEvent(new CustomEvent("switchyard:workspace", { detail: workspaceId }));
+}
+
+export function selectedWorkspaceId() {
+  return typeof window === "undefined" ? null : window.localStorage.getItem(selectedWorkspaceStorageKey);
+}
 
 export const workspaces = {
   list: () => api.get<{ workspaces: Workspace[] }>(`${API_PATH}/workspaces`).then((r) => r.data.workspaces),
@@ -488,4 +504,4 @@ export const credentials = {
 export const AI_CREDENTIAL = { provider: "openrouter", name: "default" } as const;
 export const AI_PROVIDERS = ["openrouter", "openai", "anthropic", "gemini"] as const;
 export type AIProvider = (typeof AI_PROVIDERS)[number];
-export const CREDENTIAL_PROVIDERS = [...AI_PROVIDERS, "github"] as const;
+export const CREDENTIAL_PROVIDERS = [...AI_PROVIDERS, "github", "slack", "discord", "email", "webhook"] as const;

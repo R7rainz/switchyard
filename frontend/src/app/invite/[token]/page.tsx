@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, ErrorNote, Splash, Wordmark } from "@/components/ui";
-import { apiError, invites } from "@/lib/api";
+import { apiError, invites, selectWorkspace } from "@/lib/api";
 import { enterApp, useSession } from "@/lib/auth-client";
 
 /**
@@ -38,7 +38,10 @@ export default function InvitePage() {
       // Straight into the workspace they just joined. A full navigation, for
       // the same reason signing in uses one: the session store is shared and
       // the guard on the next page reads it synchronously.
-      .then(() => enterApp())
+      .then((workspace) => {
+        selectWorkspace(workspace.id);
+        enterApp();
+      })
       .catch((cause) => setError(apiError(cause)));
   }, [isPending, session, token]);
 

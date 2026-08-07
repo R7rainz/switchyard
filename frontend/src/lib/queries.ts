@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 
 import {
   cancelExecution,
@@ -14,6 +15,8 @@ import {
   type Generated,
   type Role,
   type Workflow,
+  selectedWorkspaceId,
+  selectWorkspace,
 } from "./api";
 
 /**
@@ -40,7 +43,21 @@ export const keys = {
  */
 export function useWorkspace() {
   const query = useQuery({ queryKey: keys.workspaces, queryFn: workspaces.list });
-  return { ...query, workspace: query.data?.[0] };
+  const [chosen, setChosen] = useState<string | null>(null);
+
+  useEffect(() => {
+    const update = () => setChosen(selectedWorkspaceId());
+    update();
+    window.addEventListener("switchyard:workspace", update);
+    return () => window.removeEventListener("switchyard:workspace", update);
+  }, []);
+
+  const workspace = query.data?.find((one) => one.id === chosen) ?? query.data?.[0];
+  useEffect(() => {
+    if (workspace && workspace.id !== chosen) selectWorkspace(workspace.id);
+  }, [workspace, chosen]);
+
+  return { ...query, workspace, workspaces: query.data ?? [], selectWorkspace };
 }
 
 export function useWorkflows(workspaceId: string | undefined) {

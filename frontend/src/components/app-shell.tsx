@@ -25,7 +25,7 @@ const links = [
  */
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { workspace } = useWorkspace();
+  const { workspace, workspaces, selectWorkspace } = useWorkspace();
 
   return (
     <div className="flex min-h-screen flex-col bg-cream-wash">
@@ -55,7 +55,16 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <div className="ml-auto flex items-center gap-3">
             {workspace ? (
-              <Eyebrow className="hidden sm:block">{workspace.name}</Eyebrow>
+              workspaces.length > 1 ? (
+                <select
+                  aria-label="Current workspace"
+                  value={workspace.id}
+                  onChange={(event) => selectWorkspace(event.target.value)}
+                  className="h-9 max-w-44 rounded-lg border border-hairline bg-canvas-white px-2 text-body-sm text-ink focus:border-ink/25 focus:outline-none"
+                >
+                  {workspaces.map((one) => <option key={one.id} value={one.id}>{one.name}</option>)}
+                </select>
+              ) : <Eyebrow className="hidden sm:block">{workspace.name}</Eyebrow>
             ) : (
               <Skeleton className="hidden h-3 w-24 sm:block" />
             )}
