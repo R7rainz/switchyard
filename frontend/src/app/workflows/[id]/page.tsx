@@ -17,7 +17,7 @@ import "@xyflow/react/dist/style.css";
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Copy, History, Play } from "lucide-react";
+import { ArrowLeft, Copy, History, MoreHorizontal, Play, Plus, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { nodeTypes } from "@/components/builder/node";
@@ -113,7 +113,13 @@ function Builder({
   const [showHistory, setShowHistory] = useState(false);
   const [showTemplate, setShowTemplate] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<"steps" | "inspector" | null>(null);
   const runId = watchingId ?? (lastRun && lastRun.status === "RUNNING" ? lastRun.id : null);
+  const hookURL = githubTriggered
+    ? githubWebhookURL(id)
+    : webhookTriggered
+      ? genericWebhookURL(id)
+      : null;
 
   const addNode = useCallback(
     (type: string) => {
@@ -122,12 +128,13 @@ function Builder({
         // never lands on top of an existing one.
         const x = current.length === 0 ? 80 : Math.max(...current.map((n) => n.position.x)) + 260;
         return [
-          ...current,
+          ...current.map((node) => ({ ...node, selected: false })),
           {
             id: nextId(type, current),
             type,
             position: { x, y: 160 },
             data: { label: specFor(type)?.label ?? type },
+            selected: true,
           } as Node,
         ];
       });
@@ -157,43 +164,30 @@ function Builder({
 
   return (
     <div className="flex h-screen flex-col bg-cream-wash">
-      <header className="flex h-[62px] shrink-0 items-center gap-4 border-b border-hairline bg-canvas-white px-4">
+      <header className="flex h-[62px] shrink-0 items-center gap-2 border-b border-hairline bg-canvas-white px-3 sm:gap-3 sm:px-4">
         <Link href="/workflows" className="flex items-center gap-2 text-ash hover:text-ink">
           <ArrowLeft size={16} strokeWidth={1.75} />
-          <Wordmark className="hidden sm:inline-flex" />
+          <Wordmark className="hidden xl:inline-flex" />
         </Link>
 
-        <span className="ml-2 min-w-0 flex-1 truncate text-body-sm text-ink">
+        <span className="min-w-0 flex-1 truncate text-body-sm text-ink sm:ml-1">
           {workflow.name}
         </span>
 
-        <SaveState saving={saving} error={saveError} dirty={dirty} />
-        {lastRun && <RunStatus status={lastRun.status} />}
+        <span className={saveError ? "max-w-24 truncate" : "hidden min-[430px]:inline"} title={saveError ?? undefined}><SaveState saving={saving} error={saveError} dirty={dirty} /></span>
+        {lastRun && <RunStatus status={lastRun.status} className="hidden md:inline-flex" />}
 
-        {githubTriggered && (
+        <div className="hidden items-center gap-2 lg:flex">
+        {hookURL && (
           <Button
             variant="neutral"
             className="h-9"
-            title={githubWebhookURL(id)}
+            title={hookURL}
             onClick={() => {
               void navigator.clipboard
-                .writeText(githubWebhookURL(id))
+                .writeText(hookURL)
                 .then(() => setWebhookCopied(true))
                 .catch(() => setWebhookCopied(false));
-            }}
-          >
-            <Copy size={14} strokeWidth={1.75} />
-            <span className="hidden sm:inline">{webhookCopied ? "Copied" : "Copy webhook URL"}</span>
-          </Button>
-        )}
-
-        {webhookTriggered && (
-          <Button
-            variant="neutral"
-            className="h-9"
-            title={genericWebhookURL(id)}
-            onClick={() => {
-              void navigator.clipboard.writeText(genericWebhookURL(id)).then(() => setWebhookCopied(true)).catch(() => setWebhookCopied(false));
             }}
           >
             <Copy size={14} strokeWidth={1.75} />
@@ -206,7 +200,7 @@ function Builder({
           <span className="hidden sm:inline">History</span>
         </Button>
 
-        <Button variant="neutral" className="hidden h-9 lg:inline-flex" onClick={() => setShowTemplate(true)}>
+        <Button variant="neutral" className="h-9" onClick={() => setShowTemplate(true)}>
           Save template
         </Button>
 
@@ -223,6 +217,29 @@ function Builder({
             {cancel.isPending ? "Cancelling…" : "Cancel"}
           </Button>
         )}
+        </div>
+
+        <details className="group relative lg:hidden">
+          <summary aria-label="More workflow actions" className="flex size-9 cursor-pointer list-none items-center justify-center rounded-lg bg-pearl text-ink">
+            <MoreHorizontal size={17} strokeWidth={1.75} />
+          </summary>
+          <div className="absolute right-0 top-11 z-50 flex w-52 flex-col gap-1 rounded-xl border border-hairline bg-canvas-white p-2 shadow-raised">
+            {hookURL && (
+              <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-body-sm hover:bg-pearl" onClick={() => void navigator.clipboard.writeText(hookURL).then(() => setWebhookCopied(true)).catch(() => setWebhookCopied(false))}>
+                <Copy size={14} strokeWidth={1.75} /> {webhookCopied ? "Webhook copied" : "Copy webhook URL"}
+              </button>
+            )}
+            <button className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-body-sm hover:bg-pearl" onClick={() => setShowHistory(true)}>
+              <History size={14} strokeWidth={1.75} /> Version history
+            </button>
+            <button className="rounded-lg px-3 py-2 text-left text-body-sm hover:bg-pearl" onClick={() => setShowTemplate(true)}>Save as template</button>
+            {lastRun?.status === "RUNNING" && (
+              <button disabled={cancel.isPending} className="rounded-lg px-3 py-2 text-left text-body-sm text-phoenix-orange hover:bg-phoenix-orange/10" onClick={() => cancel.mutate(lastRun.id)}>
+                {cancel.isPending ? "Cancelling…" : "Cancel run"}
+              </button>
+            )}
+          </div>
+        </details>
 
         <Button
           className="h-9"
@@ -250,8 +267,8 @@ function Builder({
       )}
 
       <RunProvider workspaceId={workspaceId} executionId={runId}>
-      <div className="flex min-h-0 flex-1">
-        <Palette onAdd={addNode} />
+      <div className="relative flex min-h-0 flex-1">
+        <Palette onAdd={addNode} className="hidden lg:flex" />
 
         <div className="min-w-0 flex-1">
           <FlowCanvas
@@ -262,6 +279,7 @@ function Builder({
             onConnect={(connection: Connection) =>
               setEdges((current) => addEdge({ ...connection, id: edgeId(current) }, current))
             }
+            onAddStep={() => setMobilePanel("steps")}
           />
         </div>
 
@@ -269,7 +287,44 @@ function Builder({
           node={selected as WorkflowNode | undefined}
           onChange={updateData}
           onDelete={deleteNode}
+          className="hidden lg:flex"
         />
+
+        <div className="absolute inset-x-0 bottom-4 z-20 flex justify-center gap-2 px-4 lg:hidden">
+          <Button className="h-11 shadow-raised" onClick={() => setMobilePanel("steps")}>
+            <Plus size={16} strokeWidth={1.9} /> Add step
+          </Button>
+          <Button variant="neutral" className="h-11 border border-hairline bg-canvas-white shadow-raised" disabled={!selected} onClick={() => setMobilePanel("inspector")}>
+            <SlidersHorizontal size={16} strokeWidth={1.75} /> Configure
+          </Button>
+        </div>
+
+        {mobilePanel && (
+          <>
+            <button aria-label="Close panel" className="absolute inset-0 z-30 bg-ink/20 backdrop-blur-[2px] lg:hidden" onClick={() => setMobilePanel(null)} />
+            {mobilePanel === "steps" ? (
+              <Palette
+                onAdd={(type) => {
+                  addNode(type);
+                  setMobilePanel(null);
+                }}
+                onClose={() => setMobilePanel(null)}
+                className="absolute inset-x-0 bottom-0 z-40 max-h-[78vh] w-auto rounded-t-2xl border-r-0 border-t shadow-featured lg:hidden"
+              />
+            ) : (
+              <Inspector
+                node={selected as WorkflowNode | undefined}
+                onChange={updateData}
+                onDelete={(nodeId) => {
+                  deleteNode(nodeId);
+                  setMobilePanel(null);
+                }}
+                onClose={() => setMobilePanel(null)}
+                className="absolute inset-x-0 bottom-0 z-40 flex max-h-[78vh] w-auto rounded-t-2xl border-l-0 border-t shadow-featured lg:hidden"
+              />
+            )}
+          </>
+        )}
       </div>
       </RunProvider>
 
@@ -383,12 +438,14 @@ function FlowCanvas({
   onNodesChange,
   onEdgesChange,
   onConnect,
+  onAddStep,
 }: {
   nodes: Node[];
   edges: Edge[];
   onNodesChange: OnNodesChange<Node>;
   onEdgesChange: OnEdgesChange<Edge>;
   onConnect: (connection: Connection) => void;
+  onAddStep: () => void;
 }) {
   const { nodes: statuses } = useRunState();
 
@@ -416,6 +473,7 @@ function FlowCanvas({
   );
 
   return (
+    <div className="relative size-full">
     <ReactFlow
       nodes={nodes}
       edges={drawn}
@@ -424,11 +482,33 @@ function FlowCanvas({
       onConnect={onConnect}
       nodeTypes={nodeTypes}
       fitView
+      fitViewOptions={{ padding: 0.28, maxZoom: 1 }}
+      minZoom={0.35}
+      maxZoom={1.5}
+      snapToGrid
+      snapGrid={[20, 20]}
+      zoomOnDoubleClick={false}
       className="bg-cream-wash"
     >
-      <Background color="#b1b1af" gap={20} size={1} />
+      <Background color="#d4d2cf" gap={20} size={1} />
       <Controls showInteractive={false} />
     </ReactFlow>
+      {nodes.length === 0 && (
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-6">
+          <div className="pointer-events-auto flex max-w-xs flex-col items-center rounded-xl border border-hairline bg-canvas-white/95 p-6 text-center shadow-raised backdrop-blur">
+            <span className="mb-3 flex size-10 items-center justify-center rounded-xl bg-canary-yellow"><Plus size={18} strokeWidth={1.8} /></span>
+            <p className="text-body-lg text-ink">Start with a trigger</p>
+            <p className="mt-2 text-caption leading-relaxed text-ash">Add a manual, webhook, schedule, or GitHub trigger. Then connect the steps it should run.</p>
+            <Button className="mt-4" onClick={onAddStep}><Plus size={15} /> Add first step</Button>
+          </div>
+        </div>
+      )}
+      {nodes.length > 0 && (
+        <div className="pointer-events-none absolute left-1/2 top-3 hidden -translate-x-1/2 rounded-full border border-hairline bg-canvas-white/90 px-3 py-1.5 text-caption text-ash shadow-raised backdrop-blur md:block">
+          Select a node to configure it · drag a handle to connect
+        </div>
+      )}
+    </div>
   );
 }
 
