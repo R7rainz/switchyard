@@ -1,6 +1,6 @@
 "use client";
 
-import { Search, Trash2 } from "lucide-react";
+import { ChevronDown, Search, Trash2, X } from "lucide-react";
 import { createElement, useMemo, useState } from "react";
 
 import type { WorkflowNode } from "@/lib/api";
@@ -10,8 +10,16 @@ import { Button, Eyebrow, Input, Textarea, cx } from "@/components/ui";
 import { RunStatus } from "@/components/run-status";
 import { useNodeResult } from "./run-state";
 
-/** The list of node types you can add, grouped nowhere. */
-export function Palette({ onAdd }: { onAdd: (type: string) => void }) {
+/** The searchable node library, grouped so the full catalog never lands at once. */
+export function Palette({
+  onAdd,
+  onClose,
+  className,
+}: {
+  onAdd: (type: string) => void;
+  onClose?: () => void;
+  className?: string;
+}) {
   const [search, setSearch] = useState("");
   const filtered = useMemo(
     () => nodeSpecs.filter((spec) => `${spec.label} ${spec.summary} ${spec.type}`.toLowerCase().includes(search.toLowerCase())),
@@ -19,28 +27,53 @@ export function Palette({ onAdd }: { onAdd: (type: string) => void }) {
   );
   const groups = [...new Set(filtered.map((spec) => paletteFor(spec.type).label))];
   return (
-    <aside className="flex w-64 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline bg-canvas-white p-4">
-      <div className="flex items-center justify-between"><Eyebrow>Add a node</Eyebrow><span className="text-[10px] text-stone">{filtered.length}</span></div>
+    <aside className={cx("flex w-72 shrink-0 flex-col gap-3 overflow-y-auto border-r border-hairline bg-canvas-white p-4", className)}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <Eyebrow>Step library</Eyebrow>
+          <p className="mt-1 text-caption text-ash">Choose what happens next.</p>
+        </div>
+        {onClose ? (
+          <button onClick={onClose} aria-label="Close step library" className="rounded-lg p-2 text-ash hover:bg-pearl hover:text-ink">
+            <X size={16} strokeWidth={1.75} />
+          </button>
+        ) : <span className="text-[10px] text-stone">{filtered.length}</span>}
+      </div>
       <label className="relative">
         <Search size={14} className="pointer-events-none absolute left-3 top-3 text-stone" />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes" className="h-10 w-full rounded-lg border border-hairline bg-cream-wash pl-9 pr-3 text-body-sm text-ink outline-none placeholder:text-stone focus:border-ink/25" />
+        <input aria-label="Search node types" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search nodes" className="h-10 w-full rounded-lg border border-hairline bg-cream-wash pl-9 pr-3 text-body-sm text-ink outline-none placeholder:text-stone focus:border-ink/25" />
       </label>
-      {groups.map((group) => (
-        <div key={group} className="flex flex-col gap-1.5">
-          <Eyebrow className="px-1 pt-1">{group}</Eyebrow>
-          {filtered.filter((spec) => paletteFor(spec.type).label === group).map((spec) => {
-            const palette = paletteFor(spec.type);
-            return (
-              <button key={spec.type} onClick={() => onAdd(spec.type)} title={spec.summary} className="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left transition-colors hover:border-hairline hover:bg-pearl">
-                <span className="flex size-7 shrink-0 items-center justify-center rounded-md" style={{ background: `${palette.hex}99` }}>{createElement(iconFor(spec.type), { size: 15, strokeWidth: 1.8 })}</span>
-                <span className="min-w-0 flex-1"><span className="block truncate text-body-sm text-ink">{spec.label}</span><span className="block truncate text-[10px] text-ash">{spec.summary}</span></span>
-              </button>
-            );
-          })}
-        </div>
+      {search ? filtered.map((spec) => <PaletteItem key={spec.type} spec={spec} onAdd={onAdd} />) : groups.map((group, index) => (
+        <details key={group} open={index < 2} className="group rounded-xl border border-hairline bg-canvas-white">
+          <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2.5">
+            <span className="flex-1 text-body-sm text-ink">{group}</span>
+            <span className="text-caption text-stone">{filtered.filter((spec) => paletteFor(spec.type).label === group).length}</span>
+            <ChevronDown size={14} strokeWidth={1.75} className="text-stone transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="flex flex-col gap-1 border-t border-hairline p-1.5">
+            {filtered.filter((spec) => paletteFor(spec.type).label === group).map((spec) => (
+              <PaletteItem key={spec.type} spec={spec} onAdd={onAdd} />
+            ))}
+          </div>
+        </details>
       ))}
       {filtered.length === 0 && <p className="px-1 py-3 text-caption text-ash">No nodes match that search.</p>}
     </aside>
+  );
+}
+
+function PaletteItem({ spec, onAdd }: { spec: (typeof nodeSpecs)[number]; onAdd: (type: string) => void }) {
+  const palette = paletteFor(spec.type);
+  return (
+    <button onClick={() => onAdd(spec.type)} title={spec.summary} className="flex items-center gap-2.5 rounded-lg border border-transparent px-2.5 py-2 text-left hover:border-hairline hover:bg-cream-wash">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `${palette.hex}99` }}>
+        {createElement(iconFor(spec.type), { size: 15, strokeWidth: 1.8 })}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-body-sm text-ink">{spec.label}</span>
+        <span className="block truncate text-[10px] text-ash">{spec.summary}</span>
+      </span>
+    </button>
   );
 }
 
@@ -56,15 +89,22 @@ export function Inspector({
   node,
   onChange,
   onDelete,
+  onClose,
+  className,
 }: {
   node: WorkflowNode | undefined;
   onChange: (id: string, data: Record<string, unknown>) => void;
   onDelete: (id: string) => void;
+  onClose?: () => void;
+  className?: string;
 }) {
   if (!node) {
     return (
-      <aside className="hidden w-80 shrink-0 border-l border-hairline bg-canvas-white p-4 lg:block">
-        <Eyebrow>Inspector</Eyebrow>
+      <aside className={cx("hidden w-80 shrink-0 border-l border-hairline bg-canvas-white p-4 lg:block", className)}>
+        <div className="flex items-center justify-between gap-3">
+          <Eyebrow>Inspector</Eyebrow>
+          {onClose && <button onClick={onClose} aria-label="Close inspector" className="rounded-lg p-2 text-ash hover:bg-pearl hover:text-ink"><X size={16} strokeWidth={1.75} /></button>}
+        </div>
         <p className="mt-4 text-body-sm leading-relaxed text-ash">
           Select a node to configure it. Drag from a node&apos;s right edge to connect it to the
           next one.
@@ -78,20 +118,19 @@ export function Inspector({
   const set = (key: string, value: unknown) => onChange(node.id, { ...data, [key]: value });
 
   return (
-    <aside className="flex w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l border-hairline bg-canvas-white p-4">
+    <aside className={cx("flex w-80 shrink-0 flex-col gap-5 overflow-y-auto border-l border-hairline bg-canvas-white p-4", className)}>
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-col gap-1">
           <Eyebrow>{paletteFor(node.type).label}</Eyebrow>
           <span className="text-body-sm text-ink">{spec?.label ?? node.type}</span>
           <span className="text-[10px] text-stone">{node.id}</span>
         </div>
-        <button
-          onClick={() => onDelete(node.id)}
-          aria-label="Delete node"
-          className="-m-1 rounded-lg p-1 text-stone hover:text-phoenix-orange"
-        >
-          <Trash2 size={16} strokeWidth={1.75} />
-        </button>
+        <div className="flex items-center gap-1">
+          <button onClick={() => onDelete(node.id)} aria-label="Delete node" className="rounded-lg p-2 text-stone hover:bg-phoenix-orange/10 hover:text-phoenix-orange">
+            <Trash2 size={16} strokeWidth={1.75} />
+          </button>
+          {onClose && <button onClick={onClose} aria-label="Close inspector" className="rounded-lg p-2 text-ash hover:bg-pearl hover:text-ink"><X size={16} strokeWidth={1.75} /></button>}
+        </div>
       </div>
 
       {spec?.summary && <p className="rounded-lg bg-cream-wash p-3 text-caption leading-relaxed text-ash">{spec.summary}</p>}

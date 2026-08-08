@@ -29,6 +29,8 @@ const FRAGMENT = `
 precision mediump float;
 uniform vec2 uResolution;
 uniform float uTime;
+uniform vec2 uPointer;
+uniform float uPointerStrength;
 
 vec3 field(vec2 uv, vec2 centre, vec3 colour, float radius) {
   float d = distance(uv, centre);
@@ -54,6 +56,12 @@ void main() {
     distance(uv, vec2(aspect * (0.88 + 0.06 * cos(t * 0.9)), -0.05 + 0.05 * sin(t * 1.1)))));
   colour = mix(colour, cream, 0.55 * smoothstep(0.75, 0.0,
     distance(uv, vec2(aspect * (0.5 + 0.08 * sin(t * 0.7)), 0.5 + 0.06 * cos(t)))));
+
+  // A restrained pool of light follows the pointer. It gives the hero depth
+  // without turning the application itself into a GPU-heavy scene.
+  float pointerField = smoothstep(0.52, 0.0,
+    distance(uv, vec2(aspect * uPointer.x, uPointer.y)));
+  colour = mix(colour, vec3(1.0), pointerField * uPointerStrength * 0.13);
 
   // A little noise breaks the banding a smooth gradient shows on 8-bit panels.
   float grain = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
@@ -122,6 +130,8 @@ export function PhoenixGradient({ className }: { className?: string }) {
 
     const uResolution = gl.getUniformLocation(program, "uResolution");
     const uTime = gl.getUniformLocation(program, "uTime");
+    const uPointer = gl.getUniformLocation(program, "uPointer");
+    const uPointerStrength = gl.getUniformLocation(program, "uPointerStrength");
 
     // Half resolution: this is an out-of-focus gradient, and rendering it at
     // device pixel ratio on a 4K display costs four times the fill rate for
@@ -141,11 +151,36 @@ export function PhoenixGradient({ className }: { className?: string }) {
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const started = performance.now();
     let frame = 0;
+    let pointerX = 0.5;
+    let pointerY = 0.5;
+    let pointerStrength = 0;
+    let targetX = pointerX;
+    let targetY = pointerY;
+    let targetStrength = 0;
+
+    const point = (event: PointerEvent) => {
+      const bounds = canvas.getBoundingClientRect();
+      const inside = event.clientX >= bounds.left && event.clientX <= bounds.right
+        && event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+      if (!inside) {
+        targetStrength = 0;
+        return;
+      }
+      targetX = (event.clientX - bounds.left) / bounds.width;
+      targetY = 1 - (event.clientY - bounds.top) / bounds.height;
+      targetStrength = 1;
+    };
+    if (!still) window.addEventListener("pointermove", point, { passive: true });
 
     const draw = () => {
       // Reduced motion gets the composition, held still. The gradient is the
       // design; the drift is the flourish, and only the flourish is dropped.
       gl.uniform1f(uTime, still ? 0 : (performance.now() - started) / 1000);
+      pointerX += (targetX - pointerX) * 0.06;
+      pointerY += (targetY - pointerY) * 0.06;
+      pointerStrength += (targetStrength - pointerStrength) * 0.05;
+      gl.uniform2f(uPointer, pointerX, pointerY);
+      gl.uniform1f(uPointerStrength, pointerStrength);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       if (!still) frame = requestAnimationFrame(draw);
     };
@@ -155,6 +190,7 @@ export function PhoenixGradient({ className }: { className?: string }) {
     return () => {
       cancelAnimationFrame(frame);
       observer.disconnect();
+      window.removeEventListener("pointermove", point);
       // Deliberately no loseContext() here.
       //
       // It looks like the careful thing to do and it permanently breaks this

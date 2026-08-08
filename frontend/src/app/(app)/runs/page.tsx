@@ -64,12 +64,12 @@ export default function RunsPage() {
                   </span>
                 )}
 
-                <span className="shrink-0 text-caption text-ash tabular-nums">
+                <span className="ml-auto shrink-0 text-caption text-ash tabular-nums sm:ml-0">
                   {formatDuration(run.durationMs) ?? "—"}
                 </span>
                 {/* Wide enough for "44 seconds ago" at the eyebrow's letter
                     spacing — w-24 wrapped it onto two lines. */}
-                <Eyebrow className="w-28 shrink-0 text-right">
+                <Eyebrow className="hidden w-28 shrink-0 text-right sm:block">
                   {relativeTime(run.createdAt)}
                 </Eyebrow>
                 <ChevronRight size={14} strokeWidth={1.75} className="shrink-0 text-stone" />

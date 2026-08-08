@@ -88,7 +88,7 @@ export default function WorkflowsPage() {
       {isPending || !workspace ? (
         <WorkflowListSkeleton />
       ) : flows && flows.length > 0 ? (
-        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {flows.map((flow) => (
             <WorkflowCard key={flow.id} workflow={flow} workspaceId={workspace.id} />
           ))}
@@ -206,14 +206,14 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
 
   return (
     <li>
-      <Card className="group flex h-full flex-col gap-4 p-0">
+      <Card className="group flex h-full flex-col gap-4 overflow-hidden p-0 transition-[border-color,transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:border-ink/15 hover:shadow-raised">
         {/* The graph, not a node count. Two workflows called "deploy" read
             identically by name and differently by shape, and recognising one
             is the entire job of this screen. */}
         <Link
           href={`/workflows/${workflow.id}`}
           aria-label={`Open ${workflow.name}`}
-          className="block rounded-t-xl bg-cream-wash px-4 py-4 hover:bg-pearl"
+          className="block bg-cream-wash px-4 py-4 hover:bg-pearl"
         >
           <GraphPreview graph={workflow.graph} className="h-24 w-full" />
         </Link>
@@ -266,7 +266,7 @@ function WorkflowCard({ workflow, workspaceId }: { workflow: Workflow; workspace
           <Eyebrow className="ml-auto">{relativeTime(workflow.updatedAt)}</Eyebrow>
         </div>
 
-        <div className="mt-auto flex items-center gap-3 border-t border-hairline px-5 py-3">
+        <div className="mt-auto flex items-center gap-3 border-t border-hairline bg-cream-wash/60 px-5 py-3">
           {lastRun ? (
             <RunStatus status={lastRun.status} />
           ) : (
