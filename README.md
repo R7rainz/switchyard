@@ -92,17 +92,18 @@ through the credential service.
 
 ## Local development
 
-The frontend uses pnpm and the backend uses Go. Start PostgreSQL with the
-project's Docker Compose setup, then run:
+Start PostgreSQL, the Go API, and the Next.js dev server together:
 
 ```bash
-cd frontend
-pnpm install
-pnpm dev
+docker compose up
 ```
 
-In another terminal, configure `DATABASE_URL` and
-`SWITCHYARD_CREDENTIAL_KEY`, then run:
+Open http://localhost:3007. The API is available at http://localhost:8090 and
+PostgreSQL at localhost:5434. Stop the stack with `docker compose down`; add
+`-v` when you also want to remove the local data volumes.
+
+To run either app outside Compose, configure `DATABASE_URL` and
+`SWITCHYARD_CREDENTIAL_KEY` for the backend, then run:
 
 ```bash
 cd backend

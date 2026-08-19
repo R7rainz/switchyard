@@ -23,6 +23,10 @@ type Config struct {
 	// AuthAudience is the "aud" this backend requires in a token.
 	AuthAudience string
 
+	// AuthJWKSURLOverride is the internal URL used to fetch the frontend's
+	// public keys when the issuer is only reachable from the host/browser.
+	AuthJWKSURLOverride string
+
 	// CredentialKeys are the AES-256 master keys that encrypt stored
 	// third-party secrets, by version. More than one is present only during a
 	// rotation, where the retired key still has to open the rows the new one
@@ -67,6 +71,9 @@ type OAuthProvider struct {
 
 // AuthJWKSURL is where the issuer publishes its public keys.
 func (c Config) AuthJWKSURL() string {
+	if c.AuthJWKSURLOverride != "" {
+		return c.AuthJWKSURLOverride
+	}
 	return strings.TrimSuffix(c.AuthIssuer, "/") + "/api/auth/jwks"
 }
 
@@ -140,6 +147,15 @@ func Load() (Config, error) {
 		(parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return Config{}, fmt.Errorf("config: SWITCHYARD_AUTH_ISSUER %q is not an absolute URL", cfg.AuthIssuer)
 	}
+	if raw := os.Getenv("SWITCHYARD_AUTH_JWKS_URL"); raw != "" {
+		jwks, err := url.Parse(raw)
+		if err != nil || jwks.Scheme == "" || jwks.Host == "" || jwks.User != nil ||
+			jwks.RawQuery != "" || jwks.Fragment != "" {
+			return Config{}, fmt.Errorf("config: SWITCHYARD_AUTH_JWKS_URL %q is not an absolute URL", raw)
+		}
+		cfg.AuthJWKSURLOverride = jwks.String()
+	}
+
 	// Browser Origin values never carry a trailing slash. Keep the issuer,
 	// CORS allow-list, and frontend JWT issuer in the same canonical form.
 	cfg.AuthIssuer = parsed.Scheme + "://" + parsed.Host
