@@ -47,7 +47,16 @@ export const auth = betterAuth({
   baseURL: baseUrl,
   trustedOrigins,
   database: new Pool({ connectionString: databaseUrl }),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    // ponytail: local reset links are logged; configure an email provider before production.
+    sendResetPassword: async ({ user, url }) => {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error("Password reset email delivery is not configured");
+      }
+      console.info(`[auth] Password reset link for ${user.email}: ${url}`);
+    },
+  },
   plugins: [
     jwt({
       jwt: {
