@@ -96,6 +96,14 @@ export function AuthFields({
         />
       </Field>
 
+      {mode === "login" && (
+        <div className="-mt-2 flex justify-end">
+          <Link href="/forgot-password" className="text-body-sm text-ash underline underline-offset-4">
+            Forgot password?
+          </Link>
+        </div>
+      )}
+
       {error && <ErrorNote>{error}</ErrorNote>}
 
       <Button type="submit" disabled={pending} className="mt-1 h-12 w-full">

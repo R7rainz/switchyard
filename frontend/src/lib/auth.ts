@@ -1,6 +1,7 @@
 import { betterAuth } from "better-auth";
 import { nextCookies } from "better-auth/next-js";
 import { jwt } from "better-auth/plugins";
+import nodemailer from "nodemailer";
 import { Pool } from "pg";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -28,6 +29,28 @@ function vercelOrigin(value?: string): string | undefined {
   }
 }
 
+function smtpTransport() {
+  const host = process.env.SMTP_HOST;
+  const port = Number(process.env.SMTP_PORT ?? 587);
+  const user = process.env.SMTP_USER;
+  const password = process.env.SMTP_PASSWORD;
+  const from = process.env.SMTP_FROM;
+
+  if (!host || !Number.isInteger(port) || port <= 0 || !user || !password || !from) {
+    throw new Error("SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and SMTP_FROM must be set");
+  }
+
+  return {
+    from,
+    transporter: nodemailer.createTransport({
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass: password },
+    }),
+  };
+}
+
 const baseUrl = originOf(process.env.BETTER_AUTH_URL ?? "http://localhost:3007");
 const trustedOrigins = [
   baseUrl,
@@ -47,7 +70,26 @@ export const auth = betterAuth({
   baseURL: baseUrl,
   trustedOrigins,
   database: new Pool({ connectionString: databaseUrl }),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      if (!process.env.SMTP_HOST) {
+        if (process.env.NODE_ENV === "production") {
+          throw new Error("Password reset email delivery is not configured");
+        }
+        console.info(`[auth] Password reset link for ${user.email}: ${url}`);
+        return;
+      }
+
+      const { from, transporter } = smtpTransport();
+      await transporter.sendMail({
+        from,
+        to: user.email,
+        subject: "Reset your Switchyard password",
+        text: `Reset your Switchyard password using this link:\n\n${url}\n\nThis link expires shortly.`,
+      });
+    },
+  },
   plugins: [
     jwt({
       jwt: {
