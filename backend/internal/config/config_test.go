@@ -75,6 +75,19 @@ func TestLoadReadsEnvironment(t *testing.T) {
 	}
 }
 
+func TestLoadUsesConfiguredJWKSURL(t *testing.T) {
+	setRequired(t)
+	t.Setenv("SWITCHYARD_AUTH_JWKS_URL", "http://frontend:3007/api/auth/jwks")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := cfg.AuthJWKSURL(); got != "http://frontend:3007/api/auth/jwks" {
+		t.Errorf("AuthJWKSURL() = %q", got)
+	}
+}
+
 func TestLoadRejectsBadIssuer(t *testing.T) {
 	for _, issuer := range []string{"localhost:3007", "/api", "not a url"} {
 		t.Run(issuer, func(t *testing.T) {
