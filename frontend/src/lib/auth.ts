@@ -51,6 +51,67 @@ function smtpTransport() {
   };
 }
 
+function escapeHtml(value: string): string {
+  const entities: Record<string, string> = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  return value.replace(/[&<>"']/g, (character) => entities[character]);
+}
+
+function resetPasswordEmail(url: string): string {
+  const safeUrl = escapeHtml(url);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Reset your Switchyard password</title>
+  </head>
+  <body style="margin:0;background:#f6f5f3;color:#111111;font-family:Arial,sans-serif;">
+    <div style="padding:32px 16px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;margin:0 auto;">
+        <tr>
+          <td style="padding:0 0 16px;font-size:13px;font-weight:700;letter-spacing:3px;">
+            <span style="display:inline-block;width:10px;height:10px;margin-right:8px;background:#e8400d;border-radius:3px;"></span>SWITCHYARD
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#ffffff;border:1px solid #ecebea;border-radius:12px;overflow:hidden;">
+            <div style="height:4px;background:#e8400d;"></div>
+            <div style="padding:36px;">
+              <div style="display:inline-block;padding:8px 10px;background:#ffef99;border-radius:8px;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">Account access</div>
+              <h1 style="margin:24px 0 12px;font-size:30px;line-height:1.1;letter-spacing:-1px;">Reset your password</h1>
+              <p style="margin:0;color:#6d6c6b;font-size:16px;line-height:1.6;">We received a request to set a new password for your Switchyard account.</p>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:28px 0 24px;">
+                <tr>
+                  <td style="border-radius:8px;background:#111111;">
+                    <a href="${safeUrl}" style="display:inline-block;padding:14px 20px;color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;">Set a new password&nbsp; &rarr;</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0;color:#6d6c6b;font-size:13px;line-height:1.6;">This link expires shortly and can only be used once.</p>
+              <div style="height:1px;margin:28px 0;background:#ecebea;"></div>
+              <p style="margin:0;color:#6d6c6b;font-size:12px;line-height:1.6;">If you didn’t request this, you can safely ignore this email.</p>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:18px 4px 0;color:#6d6c6b;font-size:12px;line-height:1.6;">
+            If the button doesn’t work, copy and paste this link:<br>
+            <a href="${safeUrl}" style="color:#111111;word-break:break-all;">${safeUrl}</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </body>
+</html>`;
+}
+
 const baseUrl = originOf(process.env.BETTER_AUTH_URL ?? "http://localhost:3007");
 const trustedOrigins = [
   baseUrl,
@@ -87,6 +148,7 @@ export const auth = betterAuth({
         to: user.email,
         subject: "Reset your Switchyard password",
         text: `Reset your Switchyard password using this link:\n\n${url}\n\nThis link expires shortly.`,
+        html: resetPasswordEmail(url),
       });
     },
   },
